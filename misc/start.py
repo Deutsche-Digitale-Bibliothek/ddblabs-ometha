@@ -1,0 +1,2 @@
+import ometha
+ometha.main()
