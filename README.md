@@ -29,8 +29,8 @@ Harvesting eines Sets mit 19999 Datensätzen von der OAI Schnittstelle der Deuts
 
 # Installation
 
-- Entweder vorkompilierte Ausführbare Datei herunterladen aus https://owncloud.gwdg.de/index.php/s/Qv3O6YWjZwvLZ1q (nicht zwingend aktuell) - erfordert keine weiteren Installationen
-- oder Download des Git-Repositorys (bzw. [eines Releases](https://gitlab.gwdg.de/maps/ometha/-/releases)) und Installation von Python (mind. Version 3.8), dann in der  Kommandozeile: `pip install -r requirements.txt`
+- Entweder vorkompilierte Ausführbare Datei herunterladen: https://github.com/Deutsche-Digitale-Bibliothek/ddblabs-ometha/releases - erfordert keine weiteren Installationen
+- oder Download des Git-Repositorys (bzw. [eines Releases](https://github.com/Deutsche-Digitale-Bibliothek/ddblabs-ometha/releases)) und Installation von Python (mind. Version 3.8), dann in der Kommandozeile im Verzeichnis des Repos: `pip install -r requirements.txt`
   - dann start bspw. über
     ```python
     import ometha
@@ -38,10 +38,6 @@ Harvesting eines Sets mit 19999 Datensätzen von der OAI Schnittstelle der Deuts
     ```
     oder Nutzung der einzelnen Module separat.
 - oder `pip install ometha` bzw. `pip install .` -> damit ist Ometha systemweit aufrufbar (bzw. bei Verwendung eines Virtual Environments nach Aktivierung des selben.)
-
-## Erweiterte Installation (Linux)
-
-Ausführbares Programm bspw. in `/usr/local/bin` oder `/usr/bin` kopieren (schauen dass der Ordner im `PATH` ist), damit Ometha von überall aufgerufen werden kann.
 
 ## Windows: SmartScreen
 
