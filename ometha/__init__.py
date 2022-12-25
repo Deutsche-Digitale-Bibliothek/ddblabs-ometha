@@ -397,6 +397,7 @@ def main():
             mprefix,
             0,
             mode,
+            session,
         )
 
     # --------------------------------------------------------------------
@@ -408,8 +409,10 @@ def main():
     except ImportError:
         from yaml import Loader
     try:
-        with Halo(text='Lese YAML ID Liste...', spinner='dots'):
-            yamllist = yaml.load(open(harvested_idfile, "r", encoding="utf-8"), Loader=Loader)
+        with Halo(text="Lese YAML ID Liste...", spinner="dots"):
+            yamllist = yaml.load(
+                open(harvested_idfile, "r", encoding="utf-8"), Loader=Loader
+            )
     except:
         pass
     else:
@@ -440,7 +443,7 @@ def main():
         timeout,
         mode,
         numberofprocesses,
-        session
+        session,
     )
 
     # --------------------------------------------------------------------

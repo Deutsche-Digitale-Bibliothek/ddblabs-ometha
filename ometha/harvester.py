@@ -224,8 +224,7 @@ def getIdentifier(
         # print(f"{Fore.GREEN}Information: \n    Starte Harvesting von {(listSize)} Identifiern: {Fore.WHITE} \n--------------------------------------")
 
     # Jetzt kommt die eigentliche Schleife: Solange wir da nicht per break rausgehen, läuft die.
-    # Immer mit neuer URL
-    # print(f"--------------------------------------")
+
     spinner.start()
     while True:
         # Verbindungsversuch inkl. Errorhandling
@@ -243,11 +242,16 @@ def getIdentifier(
                     )
         except requests.exceptions.Timeout:
             logger.critical(f"Abbruch des Identifier-Harvestings wegen eines Timeouts.")
-            logger.info(
-                f"Starten Sie Ometha neu mit dem ResumptionToken {token} - zbsp.: 'Ometha default -b {baseurl} -m {mprefix} -d {datengeber} --resumptiontoken={token}'"
-            )
+            try:
+                token
+            except:
+                pass
+            else:
+                logger.info(
+                    f"Starten Sie Ometha neu mit dem ResumptionToken {token} - zbsp.: 'Ometha default -b {baseurl} -m {mprefix} -d {datengeber} --resumptiontoken={token}'"
+                )
             harvested_idfile.close()
-            spinner.fail("Identifier Harvesting abgebrochen")
+            spinner.fail("Identifier Harvesting abgebrochen: Timeout")
             if mode == "ui":
                 input(
                     "--------------------------------------\nLeider gab es einen Timeout.\nDrücken Sie Enter zum Beenden..."
@@ -260,13 +264,20 @@ def getIdentifier(
             if debug == True:
                 print(f"Fehlermeldung:\n   {errh}")
             logger.critical(
-                f"Abbruch des Identifier-Harvestings wegen zu vieler Retries."
+                f"Abbruch des Identifier-Harvestings wegen zu vieler Retries. Ist die Schnittstelle erreichbar?"
             )
-            logger.info(
-                f"Starten Sie Ometha neu mit dem ResumptionToken {token} - zbsp.: 'Ometha default -b {baseurl} -m {mprefix} -d {datengeber} --resumptiontoken={token}'"
-            )
+            try:
+                token
+            except:
+                pass
+            else:
+                logger.info(
+                    f"Starten Sie Ometha neu mit dem ResumptionToken {token} - zbsp.: 'Ometha default -b {baseurl} -m {mprefix} -d {datengeber} --resumptiontoken={token}'"
+                )
             harvested_idfile.close()
-            spinner.fail("Identifier Harvesting abgebrochen")
+            spinner.fail(
+                "Identifier Harvesting abgebrochen: Zu viele Retries. Ist die Schnittstelle erreichbar?"
+            )
             if mode == "ui":
                 input(
                     "--------------------------------------\nIdentifier Harvesting abgebrochen wegen zu vieler Retries.\nDrücken Sie Enter zum Beenden..."
@@ -281,11 +292,16 @@ def getIdentifier(
             logger.critical(
                 f"Abbruch des Identifier-Harvestings wegen eines Fehlers: {errh}."
             )
-            logger.info(
-                f"Starten Sie Ometha neu mit dem ResumptionToken {token} - zbsp.: 'Ometha default -b {baseurl} -m {mprefix} -d {datengeber} --resumptiontoken={token}'"
-            )
+            try:
+                token
+            except:
+                pass
+            else:
+                logger.info(
+                    f"Starten Sie Ometha neu mit dem ResumptionToken {token} - zbsp.: 'Ometha default -b {baseurl} -m {mprefix} -d {datengeber} --resumptiontoken={token}'"
+                )
             harvested_idfile.close()
-            spinner.fail("Identifier Harvesting abgebrochen")
+            spinner.fail(f"Identifier Harvesting abgebrochen: {errh}")
             if mode == "ui":
                 input(
                     "--------------------------------------\nLeider gab es einen HTTP Fehler.\nDrücken Sie Enter zum Beenden..."
@@ -297,14 +313,19 @@ def getIdentifier(
         except requests.exceptions.ConnectionError as errc:
             if debug == True:
                 print(f"Fehlermeldung:\n   {errc}")
-            logger.info(
-                f"Starten Sie Ometha neu mit dem ResumptionToken {token} - zbsp.: 'Ometha default -b {baseurl} -m {mprefix} -d {datengeber} --resumptiontoken={token}'"
-            )
+            try:
+                token
+            except:
+                pass
+            else:
+                logger.info(
+                    f"Starten Sie Ometha neu mit dem ResumptionToken {token} - zbsp.: 'Ometha default -b {baseurl} -m {mprefix} -d {datengeber} --resumptiontoken={token}'"
+                )
             logger.critical(
                 f"Abbruch des Identifier-Harvestings wegen eines Fehlers: {errc}."
             )
             harvested_idfile.close()
-            spinner.fail("Identifier Harvesting abgebrochen")
+            spinner.fail(f"Identifier Harvesting abgebrochen: {errc}")
             # TODO Errorhandling, großzügige neue Versuche
             if mode == "ui":
                 input(
@@ -484,22 +505,22 @@ def harvestfiles(
                     logger.warning(
                         f"Datei {url} konnte nicht geharvestet werden ('{errors[0][0]}')"
                     )
-                    return ({"failed_download": oaiid})
+                    return {"failed_download": oaiid}
                 else:
                     savexml(oaiid, folder, xmlcontent)
         except requests.exceptions.ConnectionError:
             logger.warning(
                 f"Datei {url} wurde aufgrund eines Verbindungsproblems übersprungen"
             )
-            return ({"failed_id": oaiid})
+            return {"failed_id": oaiid}
         except requests.exceptions.Timeout:
             logger.warning(f"Datei {url} wurde aufgrund eines Timeouts übersprungen")
-            return ({"failed_id": oaiid})
+            return {"failed_id": oaiid}
         except requests.exceptions.RequestException as err:
             logger.warning(
                 f"Datei {url} wurde aufgrund eines anderen Fehlers übersprungen: {err}"
             )
-            return ({"failed_id": oaiid})
+            return {"failed_id": oaiid}
 
     if numberofprocesses > 100:
         numberofprocesses = 100
@@ -514,11 +535,12 @@ def harvestfiles(
         partial(get_text, session=session),
         urls,
         total=len(urls),
-        **{"num_cpus": numberofprocesses,
-            "desc":"Harveste...",
-            "unit":"files",
-            "dynamic_ncols":True,
-},
+        **{
+            "num_cpus": numberofprocesses,
+            "desc": "Harveste...",
+            "unit": "files",
+            "dynamic_ncols": True,
+        },
     )
 
     failed_files = defaultdict(list)
