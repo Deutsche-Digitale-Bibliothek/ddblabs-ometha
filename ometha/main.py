@@ -16,26 +16,17 @@ from loguru import logger
 from requests.adapters import HTTPAdapter
 from requests.exceptions import ConnectionError, HTTPError, Timeout
 
+from ._version import __version__
 from .cli import parseargs
 from .harvester import (
     change_date,
     create_id_file,
     get_identifier,
     harvest_files,
-    log_crfitial_and_print_and_exit,
+    log_critical_and_print_and_exit,
     print_and_log,
 )
-from .helpers import (
-    ACHTUNG,
-    FEHLER,
-    INFO,
-    ISODATEREGEX,
-    NAMESPACE,
-    PRM,
-    SEP_LINE,
-    TIMESTR,
-    __version__,
-)
+from .helpers import ACHTUNG, FEHLER, INFO, SEP_LINE, TIMESTR
 from .tui import interactiveMode
 
 
@@ -159,7 +150,7 @@ def start_process():
     try:
         session.get(PRM["b_url"], verify=False, timeout=(20, 80))
     except (HTTPError, ConnectionError, Timeout) as e:
-        log_crfitial_and_print_and_exit(f"{FEHLER}{e}", PRM["mode"])
+        log_critical_and_print_and_exit(f"{FEHLER}{e}", PRM["mode"])
 
     # --------------------------------------------------------------------
     # Scraping

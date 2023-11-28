@@ -4,18 +4,9 @@ import re
 import time
 from urllib.parse import parse_qs, urlparse
 
+from ._version import __version__
 from .harvester import read_yaml_file
-from .helpers import (
-    ACHTUNG,
-    FEHLER,
-    INFO,
-    ISODATEREGEX,
-    NAMESPACE,
-    PRM,
-    SEP_LINE,
-    TIMESTR,
-    __version__,
-)
+from .helpers import ISODATEREGEX, PRM, SEP_LINE, TIMESTR
 
 
 def parseargs() -> dict:
@@ -195,6 +186,7 @@ def parseargs() -> dict:
         PRM["n_procs"], PRM["out_p"] = read_yaml_file(
             PRM["conf_f"], ["numberofprocesses", "outputfolder"], [16, os.getcwd()]
         )
+        # TODO b_url is not read from the config file
         PRM["b_url"], PRM["pref"] = (
             re.sub(r"/\s$", "", PRM["b_url"]),
             re.sub(r"\s$", "", PRM["pref"]),

@@ -5,9 +5,11 @@ Installs:
 
 from setuptools import find_packages, setup
 
+from ometha._version import __version__
+
 setup(
     name="ometha",
-    version="2.0.0",
+    version=__version__,
     description="OAI Metadata Harvester",
     long_description="A robust and fast OAI PMH Metadata Harvester with TUI and CLI and extensive logging",
     long_description_content_type="text/markdown",

@@ -13,7 +13,7 @@ from .harvester import (
     TIMESTR,
     handle_error,
     isinvalid_xml_content,
-    log_crfitial_and_print_and_exit,
+    log_critical_and_print_and_exit,
 )
 
 
@@ -128,7 +128,7 @@ def get_sets_mprefs(url, session, sets: dict):
             print(f"{key} [{sets[key]}]\n{SEP_LINE[:-1]}")
         sys.exit(0)
     else:
-        log_crfitial_and_print_and_exit(
+        log_critical_and_print_and_exit(
             f"{SEP_LINE}Keine Sets gefunden, ist die URL korrekt?", mode="ui"
         )
 

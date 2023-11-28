@@ -1,9 +1,6 @@
 import json
 import os
 import re
-import sys
-import time
-from builtins import input
 from collections import defaultdict
 from functools import partial
 from multiprocessing.dummy import Pool as ThreadPool
@@ -11,10 +8,8 @@ from urllib.parse import parse_qs, urlparse
 
 import xmltodict
 import yaml
-from colorama import Fore, Style
 from halo import Halo
 from loguru import logger
-from lxml import etree
 from requests.exceptions import (
     ConnectionError,
     HTTPError,
@@ -24,69 +19,19 @@ from requests.exceptions import (
 )
 from tqdm import tqdm
 
+from ._version import __version__
 from .helpers import (
-    ACHTUNG,
     FEHLER,
     INFO,
-    ISODATEREGEX,
     NAMESPACE,
     PRM,
     SEP_LINE,
     TIMESTR,
-    __version__,
+    handle_error,
+    isinvalid_xml_content,
+    log_critical_and_print_and_exit,
+    print_and_log,
 )
-
-
-def print_and_log(message, logger, type: str, end="\n"):
-    print(message, end)
-    for placeholder in [SEP_LINE, ACHTUNG, INFO, FEHLER]:
-        if placeholder in message:
-            message = message.replace(placeholder, "")
-    if type == "info":
-        logger.info(message)
-    elif type == "warning":
-        logger.warning(message)
-
-
-def handle_error(e, mode, url=None):
-    error_messages = {
-        Timeout: "Timeout determining list size. The API is not reachable.",
-        RetryError: "Identifier harvesting aborted due to too many retries. Is the API reachable?",
-        HTTPError: "Identifier harvesting aborted due to an HTTP error.",
-    }
-    if type(e) is ConnectionError:
-        if "404" in str(e):
-            log_crfitial_and_print_and_exit(
-                "The API is not reachable. Is the URL correct?", mode
-            )
-        elif errors := re.findall(r"error\scode=['\"](.+)['\"]>(.*)<\\error", str(e)):
-            log_crfitial_and_print_and_exit(
-                f"{FEHLER} API error: {errors[0][0]}/{errors[0][1]} at {url}", mode
-            )
-    elif type(e) in error_messages:
-        log_crfitial_and_print_and_exit(error_messages[type(e)], mode, e)
-    else:
-        log_crfitial_and_print_and_exit("An unexpected error occurred.", mode, e)
-
-
-def log_crfitial_and_print_and_exit(message, mode=None, exception=None):
-    # FIXME this leads to ugly log-files because the separator is sometimes printed
-    logger.critical(message)
-    if exception:
-        logger.exception("Exception details:", exc_info=exception)
-    if mode == "ui" and input(f"{message}\nDrücken Sie Enter zum Beenden..."):
-        sys.exit()
-
-
-def isinvalid_xml_content(response, url, mode):
-    try:
-        root = etree.XML(response.content)
-    except etree.XMLSyntaxError as e:
-        log_crfitial_and_print_and_exit(
-            f"XML Syntax Error in the API response, probably no valid XML ({url}): '{e}'",
-            mode,
-        )
-    return root
 
 
 # restliche Funktionen
@@ -189,7 +134,7 @@ def harvest_files(ids, PRM, folder, session) -> list:
     if ids:
         print_and_log(f"{SEP_LINE}Harveste {len(ids)} IDs.", logger, "info")
     else:
-        log_crfitial_and_print_and_exit(
+        log_critical_and_print_and_exit(
             f"{SEP_LINE}Keine Identifier bekommen, breche ab.", PRM["mode"]
         )
 
@@ -249,6 +194,7 @@ def change_date(date: str, name: str, key: str):
 
 
 def create_id_file(p, ids, folder, type=None):  # type kann außerdem failed sein
+    # TODO add date or some other kind of identifier to the file name?
     file = os.path.join(folder, f"{type}_ids.yaml")
     with open(file, "w", encoding="utf-8") as f:
         f.write(
@@ -258,7 +204,21 @@ def create_id_file(p, ids, folder, type=None):  # type kann außerdem failed sei
     return file
 
 
-def read_yaml_file(file_path, keys, default=None):
+def read_yaml_file(file_path: str, keys: list, default: any = None) -> list:
+    """Reads a yaml file and returns the values for the given keys.
+
+    Args:
+        file_path: The path to the yaml file.
+        keys: The keys to read from the file.
+        default: The default value to return if the key is not found. Defaults to None.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+        KeyError: If a key is not found in the file.
+
+    Returns:
+        The values for the given keys.
+    """
     try:
         with open(file_path, "r", encoding="utf-8") as ymlfile:
             y = yaml.safe_load(ymlfile)
@@ -268,9 +228,9 @@ def read_yaml_file(file_path, keys, default=None):
                 result.append(value)
             return result
     except (OSError, KeyError) as e:
-        log_crfitial_and_print_and_exit(
+        log_critical_and_print_and_exit(
             f"{SEP_LINE}{FEHLER} Datei kann nicht gelesen werden."
         ) if isinstance(e, OSError) else None
-        log_crfitial_and_print_and_exit(
+        log_critical_and_print_and_exit(
             f"{SEP_LINE}Der Eintrag für {e} fehlt in der YAML Datei {file_path}."
         ) if isinstance(e, KeyError) else None
