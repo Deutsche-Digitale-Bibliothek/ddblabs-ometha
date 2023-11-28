@@ -66,10 +66,12 @@ def interactiveMode(session):
             lambda prefix: bool(prefix),
             "Feld darf nicht leer sein!",
         )
-        PRM["sets"] = parse_set_values(
-            input("Set(s) kommagetrennt oder (für Schnittmenge mit '/' getrennt): ")
-            or None
-        )
+        PRM["sets"] = [
+            parse_set_values(
+                input("Set(s) kommagetrennt oder (für Schnittmenge mit '/' getrennt): ")
+                or None
+            )
+        ]
         PRM["f_date"] = input("Fromdate: ") or None
         PRM["u_date"] = input("Untildate: ") or None
     if how_to_start == "I":
