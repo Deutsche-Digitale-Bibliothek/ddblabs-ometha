@@ -13,3 +13,5 @@ ometha.egg-info/
 misc/dist/
 build/
 Pipfile.lock
+*.xml
+*.json

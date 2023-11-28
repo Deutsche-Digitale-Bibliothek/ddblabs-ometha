@@ -109,16 +109,15 @@ def start_process():
     if not PRM:
         logger.critical("No parameters were passed to Ometha.")
         sys.exit()
-    # Ordner für Log, Configfile und Output anlegen
-    print(PRM)
+    # Ordner für Log, Configfile und Output anlegen im aktuellen Verzeichnis
     if PRM["out_f"] is None:
-        PRM["out_f"] = os.path.join(application_path, "output")
+        PRM["out_f"] = os.path.join(os.getcwd(), "output")
     folder = os.path.join(PRM["out_f"], PRM["dat_geb"], TIMESTR)
     os.makedirs(folder, exist_ok=True)
 
     # Logfile anlegen
     logger.remove()  # Initalen Logger löschen, damit er nicht alles in stderr loggt:
-    log_file = os.path.join(folder, f"Ometha_{PRM['dat_geb']}.log")
+    log_file = os.path.join(folder, f"_ometha_{PRM['dat_geb']}.log")
     logger.level("PARAMETER", no=38, color="<blue>")
     logger.add(
         log_file,

@@ -110,7 +110,12 @@ def harvest_files(ids, PRM, folder, session) -> list:
             except Exception as e:
                 print(f"Error converting XML to JSON: {e}")
         else:
-            print(f"Unsupported file type: {export_type}")
+            # print(f"Unsupported file type: {export_type}. Reverting to XML.")
+            # TODO this check should be done before the harvesting starts
+            with open(
+                os.path.join(folder, f"{filename}.xml"), "w", encoding="utf8"
+            ) as of:
+                of.write(response)
 
     def get_text(url, session, folder, export_type):
         oai_id = parse_qs(urlparse(url).query)["identifier"][0]
@@ -193,12 +198,24 @@ def change_date(date: str, name: str, key: str):
             yaml.safe_dump(doc, f, default_flow_style=False, sort_keys=False)
 
 
-def create_id_file(p, ids, folder, type=None):  # type kann außerdem failed sein
+def create_id_file(p, ids, folder, type=None):
+    """
+    Create an ID file with the given parameters.
+
+    Args:
+        p (dict): The parameters dictionary.
+        ids (list): The list of IDs.
+        folder (str): The folder path where the file will be created.
+        type (str, optional): The type of the file. Defaults to None.
+
+    Returns:
+        str: The path of the created file.
+    """
     # TODO add date or some other kind of identifier to the file name?
-    file = os.path.join(folder, f"{type}_ids.yaml")
+    file = os.path.join(folder, f"_ometha_{type}_ids.yaml")
     with open(file, "w", encoding="utf-8") as f:
         f.write(
-            f"Information: Liste erzeugt mit Ometha {__version__}\ndate: {TIMESTR}\nurl: {p['b_url']}\nset: {p['sets']}\nmprefix: {p['pref']}\nids:\n"
+            f"Information: Liste erzeugt mit Ometha {__version__}\ndate: {TIMESTR}\nbaseurl: {p['b_url']}\nset: {p['sets']}\nmetadataPrefix: {p['pref']}\ndatengeber: {p['dat_geb']}\ntimeout: {p['timeout']}\ndebug: {p['debug']}\nfromdate: {p['f_date']}\nuntildate: {p['u_date']}\noutputfolder: {p['out_f']}\nids:\n"
         )
         f.write("\n".join([f"- '{fid}'" for fid in ids]))
     return file
@@ -217,7 +234,7 @@ def read_yaml_file(file_path: str, keys: list, default: any = None) -> list:
         KeyError: If a key is not found in the file.
 
     Returns:
-        The values for the given keys.
+        A list containing the values for the given keys.
     """
     try:
         with open(file_path, "r", encoding="utf-8") as ymlfile:

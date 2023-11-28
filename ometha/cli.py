@@ -183,10 +183,10 @@ def parseargs() -> dict:
             PRM["conf_f"],
             ["baseurl", "set", "metadataPrefix", "datengeber", "timeout", "debug"],
         )
-        PRM["n_procs"], PRM["out_p"] = read_yaml_file(
-            PRM["conf_f"], ["numberofprocesses", "outputfolder"], [16, os.getcwd()]
-        )
-        # TODO b_url is not read from the config file
+        # outputfolder: if none is defined use the current working directory
+        PRM["out_f"] = read_yaml_file(PRM["conf_f"], ["outputfolder"], os.getcwd())[0]
+        # n_procs is not given in the config file, use default value
+        PRM["n_procs"] = 16
         PRM["b_url"], PRM["pref"] = (
             re.sub(r"/\s$", "", PRM["b_url"]),
             re.sub(r"\s$", "", PRM["pref"]),
