@@ -12,21 +12,23 @@ import requests
 import urllib3
 import yaml
 from colorama import Fore, Style, init
+from halo import Halo
 from loguru import logger
 from requests.adapters import HTTPAdapter
 from requests.exceptions import ConnectionError, HTTPError, Timeout
 
 from ._version import __version__
 from .cli import parseargs
-from .harvester import (
-    change_date,
-    create_id_file,
-    get_identifier,
-    harvest_files,
+from .harvester import change_date, create_id_file, get_identifier, harvest_files
+from .helpers import (
+    ACHTUNG,
+    FEHLER,
+    INFO,
+    SEP_LINE,
+    TIMESTR,
     log_critical_and_print_and_exit,
     print_and_log,
 )
-from .helpers import ACHTUNG, FEHLER, INFO, SEP_LINE, TIMESTR
 from .tui import interactiveMode
 
 
@@ -139,7 +141,7 @@ def start_process():
     }
     for param, value in parameters.items():
         logger.log("PARAMETER", f"{param}: {value}")
-    print(f"Logfile: {log_file}")
+    print(f"{INFO}Logfile: {log_file}")
 
     # bei Configmode & Automode das Datum der Konfigurationsdatei aktualisieren
     change_date(TIMESTR, PRM["conf_f"], key="until-Datum")
@@ -147,9 +149,11 @@ def start_process():
     # Baseurl anpassen/überprüfen
     PRM["b_url"] = re.sub(r"(\?.+)", "", PRM["b_url"]).rstrip("/")
     try:
-        session.get(PRM["b_url"], verify=False, timeout=(20, 80))
+        with Halo(text=f"Accessing {PRM['b_url']}", spinner="dots"):
+            session.get(PRM["b_url"], verify=False, timeout=(20, 80))
     except (HTTPError, ConnectionError, Timeout) as e:
         log_critical_and_print_and_exit(f"{FEHLER}{e}", PRM["mode"])
+        sys.exit()
 
     # --------------------------------------------------------------------
     # Scraping
@@ -203,7 +207,11 @@ def start_process():
     print(
         f"{Style.DIM} Timeout auf {PRM['timeout']} s gesetzt. {Style.RESET_ALL}\n{SEP_LINE}"
     ) if PRM["debug"] else None
-
+    if len(ids) == 0:
+        log_critical_and_print_and_exit(
+            f"{SEP_LINE}{FEHLER} Keine IDs gefunden. Programm beendet."
+        )
+        sys.exit()
     failed_download, failed_ids = harvest_files(ids, PRM, folder, session)
     if failed_ids or failed_download:
         # failed_ids: Beim Harvesting übersprungene Dateien (wegen Timeout/Connection-problem). Hier nochmal versuchen!

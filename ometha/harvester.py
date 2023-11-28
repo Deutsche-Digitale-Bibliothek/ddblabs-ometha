@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import sys
 from collections import defaultdict
 from functools import partial
 from multiprocessing.dummy import Pool as ThreadPool
@@ -57,7 +58,7 @@ def get_identifier(PRM: dict, url: str, session) -> list:
         if id_list == []:
             list_size = re.search(r"completeListSize=[\"|'](\d+)[\"|']", response.text)
             print_and_log(
-                f"{INFO}Angegebene ListSize: {list_size.group(1)}",
+                f"\n{INFO}Angegebene ListSize: {list_size.group(1)}",
                 logger,
                 "info",
                 end="",
@@ -244,10 +245,12 @@ def read_yaml_file(file_path: str, keys: list, default: any = None) -> list:
                 value = y.get(key, default)
                 result.append(value)
             return result
-    except (OSError, KeyError) as e:
+    except OSError as e:
         log_critical_and_print_and_exit(
-            f"{SEP_LINE}{FEHLER} Datei kann nicht gelesen werden."
-        ) if isinstance(e, OSError) else None
+            f"\n{FEHLER} Datei {file_path} kann nicht gelesen werden."
+        )
+        sys.exit()
+    except KeyError as e:
         log_critical_and_print_and_exit(
-            f"{SEP_LINE}Der Eintrag für {e} fehlt in der YAML Datei {file_path}."
-        ) if isinstance(e, KeyError) else None
+            f"Der Eintrag für {e} fehlt in der YAML Datei {file_path}."
+        )

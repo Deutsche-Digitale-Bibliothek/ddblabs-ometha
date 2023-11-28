@@ -72,7 +72,7 @@ def handle_error(e, mode, url=None):
 
 
 def log_critical_and_print_and_exit(message, mode=None, exception=None):
-    # FIXME this leads to ugly log-files because the separator is sometimes printed
+    print(message)
     logger.critical(message)
     if exception:
         logger.exception("Exception details:", exc_info=exception)
