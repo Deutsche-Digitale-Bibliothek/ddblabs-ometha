@@ -37,19 +37,6 @@ def start_process():
     multiprocessing.set_start_method("fork") if sys.platform == "darwin" else None
     init(autoreset=True)  # Colorama Einstellung:
 
-    print(
-        Fore.MAGENTA
-        + """
- ██████╗ ███╗   ███╗███████╗████████╗██╗  ██╗ █████╗
-██╔═══██╗████╗ ████║██╔════╝╚══██╔══╝██║  ██║██╔══██╗
-██║   ██║██╔████╔██║█████╗     ██║   ███████║███████║
-██║   ██║██║╚██╔╝██║██╔══╝     ██║   ██╔══██║██╔══██║
-╚██████╔╝██║ ╚═╝ ██║███████╗   ██║   ██║  ██║██║  ██║
- ╚═════╝ ╚═╝     ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝
-    """,
-        f"{Style.DIM}Version {__version__}\n{SEP_LINE}",
-    )
-
     if getattr(sys, "frozen", False):
         application_path = os.path.dirname(os.path.abspath(sys.executable))
         running_mode = "Frozen/executable"
@@ -62,13 +49,13 @@ def start_process():
             running_mode = "Interactive"
 
     config_path = (
-        os.path.join(os.path.expanduser("~"), ".ometha.yaml")
+        os.path.join(os.path.expanduser("~"), ".ometha")
         if sys.platform.startswith(("linux", "darwin"))
         else os.path.join(application_path, "ometha.yaml")
     )
     if os.path.exists(config_path):
         with open(config_path, "r", encoding="utf-8") as yaml_configfile:
-            headers = yaml.safe_load(yaml_configfile).get("requestheaders", [{}])[0]
+            headers = yaml.safe_load(yaml_configfile)
     else:
         if (
             input(
@@ -80,14 +67,31 @@ def start_process():
             frm = input(
                 "Soll es 'from'-Feld im Header geben? (Leerlassen, wenn nein): "
             )
-            headers = {"User-Agent": ua, "From": frm}
-            with open(
-                os.path.join(config_path, "ometha.yaml"), "w", encoding="utf8"
-            ) as f:
+            headers = {"User-Agent": ua, "From": frm, "asciiart": True}
+            with open(os.path.join(config_path), "w", encoding="utf8") as f:
                 f.write(yaml.dump(headers))
         else:
-            ua, frm = f"Ometha {__version__}", "test"
-        headers = {"User-Agent": ua, "From": frm}
+            headers = {
+                "User-Agent": f"Ometha {__version__}",
+                "From": "test",
+                "asciiart": True,
+            }
+            with open(os.path.join(config_path), "w", encoding="utf8") as f:
+                f.write(yaml.dump(headers))
+    if headers.get("asciiart", True):
+        print(
+            Fore.MAGENTA
+            + """
+    ██████╗ ███╗   ███╗███████╗████████╗██╗  ██╗ █████╗
+    ██╔═══██╗████╗ ████║██╔════╝╚══██╔══╝██║  ██║██╔══██╗
+    ██║   ██║██╔████╔██║█████╗     ██║   ███████║███████║
+    ██║   ██║██║╚██╔╝██║██╔══╝     ██║   ██╔══██║██╔══██║
+    ╚██████╔╝██║ ╚═╝ ██║███████╗   ██║   ██║  ██║██║  ██║
+    ╚═════╝ ╚═╝     ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝
+        """,
+            f"{Style.DIM}Version {__version__}\n{SEP_LINE}",
+        )
+    headers = {"User-Agent": headers["User-Agent"], "From": headers["From"]}
 
     # Session konfigurieren
     assert_status_hook = lambda response, *args, **kwargs: response.raise_for_status()
