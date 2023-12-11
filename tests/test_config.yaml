@@ -1,0 +1,8 @@
+Information: Liste erzeugt mit Ometha 1.9.7
+date: 2023-11-28T09:16:43Z
+datengeber: "Test"
+timeout: 0
+debug: false
+baseurl: https://digital.sulb.uni-saarland.de/viewer/oai
+set: [{'additive': ['hk'], 'intersection': []}]
+metadataPrefix: mets
