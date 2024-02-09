@@ -58,7 +58,7 @@ def get_identifier(PRM: dict, url: str, session) -> list:
         if id_list == []:
             list_size = re.search(r"completeListSize=[\"|'](\d+)[\"|']", response.text)
             print_and_log(
-                f"\n{INFO}Angegebene ListSize: {list_size.group(1)}",
+                f"{INFO}Angegebene ListSize: {list_size.group(1)}",
                 logger,
                 "info",
                 end="",
