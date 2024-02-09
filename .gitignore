@@ -12,3 +12,6 @@ ometha.egg-info/
 .ipynb_checkpoints/*
 misc/dist/
 build/
+Pipfile.lock
+*.xml
+*.json

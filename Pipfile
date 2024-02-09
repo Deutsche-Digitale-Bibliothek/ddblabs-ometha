@@ -1,0 +1,25 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+colorama = "*"
+loguru = "*"
+lxml = "*"
+progress = "*"
+pyyaml = "*"
+requests = "*"
+urllib3 = "*"
+halo = "*"
+pretty-errors = "*"
+aiohttp = "*"
+p-tqdm = "*"
+xmltodict = "*"
+ometha = {path = "."}
+
+[dev-packages]
+ometha = {path = ".", develop = true}
+
+[requires]
+python_version = "3.11"
