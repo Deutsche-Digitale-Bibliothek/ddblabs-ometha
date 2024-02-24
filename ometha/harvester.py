@@ -44,10 +44,11 @@ def get_identifier(PRM: dict, url: str, session) -> list:
     :param session:
     :return: a list of all extracted identifiers
     """
-    spinner = Halo(text="Lade IDs...", spinner="dotes3")
-    spinner.start()
+    spinner = Halo(spinner="dotes3")
+
     id_list = []
     while True:
+        spinner.start()
         try:
             response = session.get(url, verify=False, timeout=(20, 80))
             root = isinvalid_xml_content(response, url, PRM["mode"])
@@ -71,7 +72,7 @@ def get_identifier(PRM: dict, url: str, session) -> list:
         # Die Objekte in listIdentifiers auslesen
         generated_ids = [ids.text for ids in root.findall(f".//{NAMESPACE}identifier")]
         id_list.extend(generated_ids)
-
+        spinner.text = "Lade IDs: " + str(len(id_list))
         # URL für nächste Suche zusammenbauen, wenn kein Token (== letzte Seite) loop beenden
         if not token:
             break
