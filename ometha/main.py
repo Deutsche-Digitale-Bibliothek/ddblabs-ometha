@@ -153,11 +153,32 @@ def start_process():
     # Baseurl anpassen/überprüfen
     PRM["b_url"] = re.sub(r"(\?.+)", "", PRM["b_url"]).rstrip("/")
     try:
-        with Halo(text=f"Accessing {PRM['b_url']}?verb=Identify", spinner="dots"):
-            session.get(PRM["b_url"] + "?verb=Identify", verify=False, timeout=(20, 80))
-    except (HTTPError, ConnectionError, Timeout) as e:
-        log_critical_and_print_and_exit(f"{FEHLER}{e}", PRM["mode"])
-        sys.exit()
+        # try baseurl
+        with Halo(text=f"Checking if {PRM['b_url']} is accessible", spinner="dots"):
+            session.get(PRM["b_url"], verify=False, timeout=(20, 80))
+    except (
+        requests.exceptions.HTTPError,
+        requests.exceptions.RetryError,
+        urllib3.exceptions.MaxRetryError,
+    ):
+        print(f"{FEHLER} {PRM['b_url']} is not accessible. Trying with verb=Identify.")
+        try:
+            # try baseurl with verb Identify
+            with Halo(
+                text=f"Checking if {PRM['b_url']}?verb=Identify is accessible",
+                spinner="dots",
+            ):
+                session.get(
+                    PRM["b_url"] + "?verb=Identify", verify=False, timeout=(20, 80)
+                )
+        except (
+            requests.exceptions.HTTPError,
+            requests.exceptions.RetryError,
+            urllib3.exceptions.MaxRetryError,
+        ) as e:
+            # if both fail, log error and exit
+            log_critical_and_print_and_exit(f"{FEHLER}{e}", PRM["mode"])
+            sys.exit()
 
     # --------------------------------------------------------------------
     # Scraping
