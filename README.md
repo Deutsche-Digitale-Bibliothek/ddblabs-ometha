@@ -38,6 +38,14 @@ Harvesting eines Sets mit 19999 Datensätzen von der OAI Schnittstelle der Deuts
     ```
     oder Nutzung der einzelnen Module separat.
 - oder `pip install ometha` bzw. `pip install .` -> damit ist Ometha systemweit aufrufbar (bzw. bei Verwendung eines Virtual Environments nach Aktivierung des selben.)
+- Nutzung von `pipenv`: 
+  ```bash
+  git clone git@github.com:Deutsche-Digitale-Bibliothek/ddblabs-ometha.git
+  cd ddblabs-ometha
+  pipenv install
+  pipenv shell
+  ometha --version  
+  ```
 
 ## Windows: SmartScreen
 
