@@ -153,9 +153,6 @@ def start_process():
     # Baseurl anpassen/überprüfen
     PRM["b_url"] = re.sub(r"(\?.+)", "", PRM["b_url"]).rstrip("/")
     try:
-        # TODO this won't work with http://bdr.oai.bsb-muenchen.de/OAIHandler
-        # only http://bdr.oai.bsb-muenchen.de/OAIHandler?verb=ListIdentifiers&metadataPrefix=MarcXchange works.
-        # Perhaps add a
         with Halo(text=f"Accessing {PRM['b_url']}?verb=Identify", spinner="dots"):
             session.get(PRM["b_url"] + "?verb=Identify", verify=False, timeout=(20, 80))
     except (HTTPError, ConnectionError, Timeout) as e:
