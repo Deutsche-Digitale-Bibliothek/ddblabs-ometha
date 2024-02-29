@@ -12,7 +12,7 @@ SEP_LINE = "--------------------------------------\n"
 ACHTUNG = f"{Fore.YELLOW}Achtung:\n {Fore.WHITE}"
 FEHLER = f"{Fore.RED}Fehler:\n  {Style.DIM}"
 INFO = f"{Fore.YELLOW}Information: {Fore.WHITE}"
-TIMESTR = time.strftime("%Y-%m-%dT%H:%M:%SZ")
+TIMESTR = time.strftime("%Y-%m-%d_%H_%M_%SZ")
 NAMESPACE = "{http://www.openarchives.org/OAI/2.0/}"
 ISODATEREGEX = "(?:19|20)[0-9]{2}-(?:(?:0[1-9]|1[0-2])-(?:0[1-9]|1[0-9]|2[0-9])|(?:(?!02)(?:0[1-9]|1[0-2])-(?:30))|(?:(?:0[13578]|1[02])-31))"
 URLREGEX = r"https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)"
