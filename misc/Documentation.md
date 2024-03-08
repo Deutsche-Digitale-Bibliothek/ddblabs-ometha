@@ -127,7 +127,7 @@ name: Saarland
 baseurl: https://digital.sulb.uni-saarland.de/viewer/oai/
 metadataPrefix: mets
 datengeber: SULB
-set:
+sets:
   - hk
 fromdate: '2020-02-13'
 untildate: null
@@ -144,7 +144,7 @@ Leere Werte sind nicht zulässig bei `baseurl`, und `metadataPrefix`; sinnvoll i
 Mehrere Sets können hier auf zwei Weisen angegeben werden:
 
 ```yaml
-set:
+sets:
   - Seteins
   - Setzwei
 ```
@@ -154,7 +154,7 @@ set:
 bzw.
 
 ```yaml
-set: ['Seteins', 'Setzwei']
+sets: ['Seteins', 'Setzwei']
 ```
 
 Kommandozeilen Parameter für den `conf` Modus:

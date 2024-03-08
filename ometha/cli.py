@@ -207,8 +207,12 @@ def parseargs() -> dict:
     elif args.command == "ids":
         convert_common_args(args)
         PRM["b_url"], PRM["sets"], PRM["pref"] = read_yaml_file(
-            args.idfile, ["baseurl", "set", "metadataPrefix"]
+            args.idfile, ["url", "sets", "mprefix"]
         )
+        if PRM["sets"] == ["komplett"]:
+            PRM["sets"] = None
+        else:
+            PRM["sets"] = [{"additive": PRM["sets"], "intersection": []}]
         PRM["dat_geb"], PRM["id_f"] = args.datengeber, args.idfile
 
     return PRM

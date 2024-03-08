@@ -115,6 +115,8 @@ def start_process():
     if not PRM:
         logger.critical("No parameters were passed to Ometha.")
         sys.exit()
+    if os.getenv("OMETHA_DEBUG") == "True":
+        print(PRM)
     # Ordner für Log, Configfile und Output anlegen im aktuellen Verzeichnis
     if PRM["out_f"] is None:
         PRM["out_f"] = os.path.join(os.getcwd(), "output")

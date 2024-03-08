@@ -217,7 +217,7 @@ def create_id_file(p, ids, folder, type=None):
     file = os.path.join(folder, f"_ometha_{type}_ids.yaml")
     with open(file, "w", encoding="utf-8") as f:
         f.write(
-            f"Information: Liste erzeugt mit Ometha {__version__}\ndate: {TIMESTR}\nbaseurl: {p['b_url']}\nset: {p['sets']}\nmetadataPrefix: {p['pref']}\ndatengeber: {p['dat_geb']}\ntimeout: {p['timeout']}\ndebug: {p['debug']}\nfromdate: {p['f_date']}\nuntildate: {p['u_date']}\noutputfolder: {p['out_f']}\nids:\n"
+            f"Information: Liste erzeugt mit Ometha {__version__}\ndate: {TIMESTR}\nbaseurl: {p['b_url']}\nsets: {p['sets']}\nmetadataPrefix: {p['pref']}\ndatengeber: {p['dat_geb']}\ntimeout: {p['timeout']}\ndebug: {p['debug']}\nfromdate: {p['f_date']}\nuntildate: {p['u_date']}\noutputfolder: {p['out_f']}\nids:\n"
         )
         f.write("\n".join([f"- '{fid}'" for fid in ids]))
     return file

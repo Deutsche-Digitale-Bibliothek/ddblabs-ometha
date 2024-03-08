@@ -112,10 +112,10 @@ name: Saarland
 baseurl: https://digital.sulb.uni-saarland.de/viewer/oai/
 metadataPrefix: mets
 datengeber: SULB
-set:
+sets:
   - hk
 # multiple Sets:
-# set:
+# sets:
 #   - Seteins
 #   - Setzwei
 fromdate: '2020-02-13'
