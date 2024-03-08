@@ -20,6 +20,7 @@ ometha = {path = "."}
 
 [dev-packages]
 ometha = {path = ".", develop = true}
+pytest = "*"
 
 [requires]
 python_version = "3.11"
