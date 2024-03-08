@@ -15,7 +15,6 @@ from colorama import Fore, Style, init
 from halo import Halo
 from loguru import logger
 from requests.adapters import HTTPAdapter
-from requests.exceptions import ConnectionError, HTTPError, Timeout
 
 from ._version import __version__
 from .cli import parseargs
@@ -100,7 +99,9 @@ def start_process():
     headers = {"User-Agent": headers["User-Agent"], "From": headers["From"]}
 
     # Session konfigurieren
-    assert_status_hook = lambda response, *args, **kwargs: response.raise_for_status()
+    def assert_status_hook(response, *args, **kwargs):
+        response.raise_for_status()
+
     adapter = HTTPAdapter(
         max_retries=urllib3.util.retry.Retry(
             total=4, status_forcelist=[429, 500, 502, 503, 504], backoff_factor=2
