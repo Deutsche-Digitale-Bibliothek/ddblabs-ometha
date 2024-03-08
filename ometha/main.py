@@ -19,7 +19,13 @@ from requests.exceptions import ConnectionError, HTTPError, Timeout
 
 from ._version import __version__
 from .cli import parseargs
-from .harvester import change_date, create_id_file, get_identifier, harvest_files
+from .harvester import (
+    change_date,
+    create_id_file,
+    get_identifier,
+    harvest_files,
+    read_yaml_file,
+)
 from .helpers import (
     ACHTUNG,
     FEHLER,
@@ -147,6 +153,8 @@ def start_process():
     }
     for param, value in parameters.items():
         logger.log("PARAMETER", f"{param}: {value}")
+    if PRM["id_f"] is not None:
+        logger.log("PARAMETER", f"ID file: {PRM['id_f']}")
     print(f"{INFO}Logfile: {log_file}")
 
     # bei Configmode & Automode das Datum der Konfigurationsdatei aktualisieren
@@ -204,23 +212,29 @@ def start_process():
 
         return get_identifier(PRM, url, session)
 
-    if PRM["sets"] is not None:
-        # Initialize lists for comma and slash sets
-        a_sets = PRM.get("sets", {})[0].get("additive", [])
-        i_sets = PRM.get("sets", {})[0].get("intersection", [])
-        # Initialize lists for comma and slash ids
-        a_ids = [
-            id for a_set in a_sets for id in generate_id_harvesting_url(PRM, a_set)
-        ]
-        i_ids = [
-            id for i_set in i_sets for id in generate_id_harvesting_url(PRM, i_set)
-        ]
-        # If both i_ids and a_ids exist, get the common ids
-        ids = list(set(i_ids) & set(a_ids)) if i_ids else a_ids
+    if PRM["id_f"] is not None:
+        # read ids from file
+        print(f"{INFO} IDs werden aus {PRM['id_f']} gelesen.")
+        ids = read_yaml_file(PRM["id_f"], ["ids"])[0]
     else:
-        ids = generate_id_harvesting_url(PRM, set=None)
+        # get ids from url
+        if PRM["sets"] is not None:
+            # Initialize lists for comma and slash sets
+            a_sets = PRM.get("sets", {})[0].get("additive", [])
+            i_sets = PRM.get("sets", {})[0].get("intersection", [])
+            # Initialize lists for comma and slash ids
+            a_ids = [
+                id for a_set in a_sets for id in generate_id_harvesting_url(PRM, a_set)
+            ]
+            i_ids = [
+                id for i_set in i_sets for id in generate_id_harvesting_url(PRM, i_set)
+            ]
+            # If both i_ids and a_ids exist, get the common ids
+            ids = list(set(i_ids) & set(a_ids)) if i_ids else a_ids
+        else:
+            ids = generate_id_harvesting_url(PRM, set=None)
 
-    create_id_file(PRM, ids, folder, type="successful")
+        create_id_file(PRM, ids, folder, type="successful")
     # BUG If read from a yaml config file n_procs is a list with two values instead of an int
     # Dateiharvesting beginnen
     PRM["n_procs"] = (
