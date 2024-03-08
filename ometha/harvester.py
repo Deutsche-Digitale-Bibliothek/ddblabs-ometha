@@ -87,15 +87,19 @@ def get_identifier(PRM: dict, url: str, session) -> list:
     return id_list
 
 
-def harvest_files(ids, PRM, folder, session) -> list:
+def harvest_files(ids, PRM, folder, session) -> tuple[list, list]:
     """
     Liest ID Liste und lädt die IDs einzeln über GetRecord.
-    :param ids:
-    :param mode:
-    :return: failed_download, failed_ids ID-Lists
+    :param ids: List of IDs
+    :param PRM: dict of parameters
+    :param folder: str of the folder path
+    :return: tuple with failed_download, failed_ids ID-Lists
     """
 
     def save_file(oai_id: str, folder: str, response, export_type):
+        """
+        Is called by get_response_text_from_url and saves the response to a file.
+        """
         filename = re.sub(r"([:.|&%$=()\"#+\'´`*~<>!?/;,\[\]]|\s)", "_", oai_id)
         if export_type == "xml":
             with open(
@@ -119,7 +123,19 @@ def harvest_files(ids, PRM, folder, session) -> list:
             ) as of:
                 of.write(response)
 
-    def get_text(url, session, folder, export_type):
+    def get_response_text_from_url(url: str, session, folder: str, export_type: str):
+        """
+        Downloads the content from the given URL and saves it to a file.
+
+        Parameters:
+        url (str): The URL to download the content from.
+        session (requests.Session): The session to use for the download.
+        folder (str): The folder to save the downloaded content in.
+        export_type (str): The type of the export (used to determine if saved as XML or JSON).
+
+        Returns (only in case of an error):
+        dict: A dictionary containing the id of the failed download or failed id in case of an error.
+        """
         oai_id = parse_qs(urlparse(url).query)["identifier"][0]
         try:
             with session.get(url) as resp:
@@ -159,7 +175,7 @@ def harvest_files(ids, PRM, folder, session) -> list:
             tqdm(
                 pool.imap(
                     partial(
-                        get_text,
+                        get_response_text_from_url,
                         session=session,
                         folder=folder,
                         export_type=PRM["exp_type"],
@@ -187,7 +203,11 @@ def harvest_files(ids, PRM, folder, session) -> list:
     return failed_download, failed_ids
 
 
-def change_date(date: str, name: str, key: str):
+def change_date(date: str, name: str, key: str) -> None:
+    """
+    Utility function: Change the date in the configuration file.
+    No return value, the function changes the file in place.
+    """
     if PRM["conf_m"] and PRM["auto_m"]:
         print_and_log(
             f"{SEP_LINE}{INFO} Setze das {key} der Konfigurationsdatei {PRM['conf_f']} auf das aktuelle Datum",
@@ -200,12 +220,12 @@ def change_date(date: str, name: str, key: str):
             yaml.safe_dump(doc, f, default_flow_style=False, sort_keys=False)
 
 
-def create_id_file(p, ids, folder, type=None):
+def create_id_file(PRM: dict, ids: list, folder: str, type=None) -> str:
     """
     Create an ID file with the given parameters.
 
     Args:
-        p (dict): The parameters dictionary.
+        PRM (dict): The parameters dictionary.
         ids (list): The list of IDs.
         folder (str): The folder path where the file will be created.
         type (str, optional): The type of the file. Defaults to None.
@@ -217,7 +237,7 @@ def create_id_file(p, ids, folder, type=None):
     file = os.path.join(folder, f"_ometha_{type}_ids.yaml")
     with open(file, "w", encoding="utf-8") as f:
         f.write(
-            f"Information: Liste erzeugt mit Ometha {__version__}\ndate: {TIMESTR}\nbaseurl: {p['b_url']}\nsets: {p['sets']}\nmetadataPrefix: {p['pref']}\ndatengeber: {p['dat_geb']}\ntimeout: {p['timeout']}\ndebug: {p['debug']}\nfromdate: {p['f_date']}\nuntildate: {p['u_date']}\noutputfolder: {p['out_f']}\nids:\n"
+            f"Information: Liste erzeugt mit Ometha {__version__}\ndate: {TIMESTR}\nbaseurl: {PRM['b_url']}\nsets: {PRM['sets']}\nmetadataPrefix: {PRM['pref']}\ndatengeber: {PRM['dat_geb']}\ntimeout: {PRM['timeout']}\ndebug: {PRM['debug']}\nfromdate: {PRM['f_date']}\nuntildate: {PRM['u_date']}\noutputfolder: {PRM['out_f']}\nids:\n"
         )
         f.write("\n".join([f"- '{fid}'" for fid in ids]))
     return file
