@@ -146,6 +146,7 @@ def start_process():
     if PRM["out_f"] is None:
         PRM["out_f"] = os.path.join(os.getcwd(), "output")
     folder = os.path.join(PRM["out_f"], PRM["dat_geb"], TIMESTR)
+    folder = folder.replace(":", "_")
     os.makedirs(folder, exist_ok=True)
 
     # Logfile anlegen
