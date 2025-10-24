@@ -1,6 +1,8 @@
 __pycache__/
 Ometha.spec
 .vscode/
+.venv/
+.pytest_cache/
 logs/*
 Test/*
 tempCodeRunnerFile.python

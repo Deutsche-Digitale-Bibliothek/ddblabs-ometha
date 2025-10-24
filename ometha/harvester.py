@@ -52,7 +52,7 @@ def get_identifier(PRM: dict, url: str, session) -> list:
         try:
             response = session.get(url, verify=False, timeout=(20, 80))
             root = isinvalid_xml_content(response, url, PRM["mode"])
-        except (Timeout, RetryError, HTTPError, ConnectionError) as e:
+        except Exception as e:
             handle_error(e, PRM["mode"], url)
 
         # zu Beginn ListSize ermitteln

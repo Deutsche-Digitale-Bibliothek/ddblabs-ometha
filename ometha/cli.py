@@ -174,15 +174,16 @@ def parseargs() -> dict:
         )
         (
             PRM["b_url"],
-            PRM["sets"],
+            PRM["sets"],  # Ensure this is a dict
             PRM["pref"],
             PRM["dat_geb"],
             PRM["timeout"],
             PRM["debug"],
         ) = read_yaml_file(
             PRM["conf_f"],
-            ["baseurl", "set", "metadataPrefix", "datengeber", "timeout", "debug"],
+            ["baseurl", "sets", "metadataPrefix", "datengeber", "timeout", "debug"],
         )
+
         # outputfolder: if none is defined use the current working directory
         PRM["out_f"] = read_yaml_file(PRM["conf_f"], ["outputfolder"], os.getcwd())[0]
         # n_procs is not given in the config file, use default value
@@ -191,6 +192,13 @@ def parseargs() -> dict:
             re.sub(r"/\s$", "", PRM["b_url"]),
             re.sub(r"\s$", "", PRM["pref"]),
         )
+
+        # Convert sets to a dictionary if it's a list
+        if isinstance(PRM["sets"], list):
+            PRM["sets"] = {
+                "additive": PRM["sets"],
+                "intersection": [],
+            }  # Adjust as needed
     elif args.command == "auto":
         convert_common_args(args)
         PRM["auto_m"] = True
@@ -219,14 +227,16 @@ def parseargs() -> dict:
 
 
 def parse_set_values(value):
-    sets = {"additive": [], "intersection": []}
-    if "/" in value:
-        slash_parts = value.split("/")
-        sets["additive"].extend(item.strip() for item in slash_parts[0].split(","))
-        sets["intersection"].extend(item.strip() for item in slash_parts[1].split(","))
-    elif "," in value:
-        sets["additive"].extend(item.strip() for item in value.split(","))
+    if value is not None:
+        sets = {"additive": [], "intersection": []}
+        if "/" in value:
+            slash_parts = value.split("/")
+            sets["additive"].extend(item.strip() for item in slash_parts[0].split(","))
+            sets["intersection"].extend(item.strip() for item in slash_parts[1].split(","))
+        elif "," in value:
+            sets["additive"].extend(item.strip() for item in value.split(","))
+        else:
+            sets["additive"].append(value.strip())  # If no separator is found, assume comma
     else:
-        sets["additive"].append(value.strip())  # If no separator is found, assume comma
-
+        sets = {"additive": [], "intersection": []}
     return sets

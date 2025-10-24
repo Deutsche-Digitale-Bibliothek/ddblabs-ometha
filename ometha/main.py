@@ -9,11 +9,11 @@ import sys
 import timeit
 
 import requests
+from loguru import logger
 import urllib3
 import yaml
 from colorama import Fore, Style, init
 from halo import Halo
-from loguru import logger
 from requests.adapters import HTTPAdapter
 
 from ._version import __version__
@@ -31,6 +31,7 @@ from .helpers import (
     INFO,
     SEP_LINE,
     TIMESTR,
+    configure_logging,
     log_critical_and_print_and_exit,
     print_and_log,
 )
@@ -220,23 +221,30 @@ def start_process():
         ids = read_yaml_file(PRM["id_f"], ["ids"])[0]
     else:
         # get ids from url
-        if PRM["sets"] is not None:
+        if PRM["sets"]:  # Check if sets is not empty
             # Initialize lists for comma and slash sets
-            a_sets = PRM.get("sets", {})[0].get("additive", [])
-            i_sets = PRM.get("sets", {})[0].get("intersection", [])
+            # Extract the first dictionary from the sets list
+            sets_dict = PRM["sets"][0] if PRM["sets"] else {"additive": [], "intersection": []}
+            a_sets = sets_dict.get("additive", [])
+            i_sets = sets_dict.get("intersection", [])
+
+            # If both additive and intersection are empty, use set=None
+            if not a_sets and not i_sets:
+                ids = generate_id_harvesting_url(PRM, set=None, session=session)
+            else:
             # Initialize lists for comma and slash ids
-            a_ids = [
-                id
-                for a_set in a_sets
-                for id in generate_id_harvesting_url(PRM, a_set, session)
-            ]
-            i_ids = [
-                id
-                for i_set in i_sets
-                for id in generate_id_harvesting_url(PRM, i_set, session)
-            ]
-            # If both i_ids and a_ids exist, get the common ids
-            ids = list(set(i_ids) & set(a_ids)) if i_ids else a_ids
+                a_ids = [
+                    id
+                    for a_set in a_sets
+                    for id in generate_id_harvesting_url(PRM, a_set, session)
+                ]
+                i_ids = [
+                    id
+                    for i_set in i_sets
+                    for id in generate_id_harvesting_url(PRM, i_set, session)
+                ]
+                # If both i_ids and a_ids exist, get the common ids
+                ids = list(set(i_ids) & set(a_ids)) if i_ids else a_ids
         else:
             ids = generate_id_harvesting_url(PRM, set=None, session=session)
 
@@ -298,4 +306,5 @@ def start_process():
 
 
 if __name__ == "__main__":
+    logger = configure_logging()
     start_process()

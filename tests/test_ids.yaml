@@ -4,7 +4,7 @@ datengeber: "Test"
 timeout: 0
 debug: false
 baseurl: https://digital.sulb.uni-saarland.de/viewer/oai
-set: [{'additive': ['hk'], 'intersection': []}]
+sets: [{'additive': ['hk'], 'intersection': []}]
 metadataPrefix: mets
 ids:
 - '1655608347'

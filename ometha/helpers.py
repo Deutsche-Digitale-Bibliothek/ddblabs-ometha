@@ -39,6 +39,17 @@ PRM = {
 }
 
 
+def configure_logging():
+    logger.remove()  # Remove the default logger
+    logger.add(
+        sys.stderr,  # Log to standard error
+        level="ERROR",  # Only log errors and above
+        format="{time} {level} {message}",  # Customize the log format
+        backtrace=False,  # Disable backtrace
+        diagnose=False,  # Disable diagnostic information
+    )
+
+
 def print_and_log(message, logger, type: str, end="\n"):
     print(message, end)
     for placeholder in [SEP_LINE, ACHTUNG, INFO, FEHLER]:
@@ -76,6 +87,7 @@ def log_critical_and_print_and_exit(message, mode=None, exception=None):
     logger.critical(message)
     if exception:
         logger.exception("Exception details:", exc_info=exception)
+        sys.exit()
     if mode == "ui" and input(f"{message}\nDrücken Sie Enter zum Beenden..."):
         sys.exit()
 
