@@ -184,21 +184,38 @@ def parseargs() -> dict:
             ["baseurl", "sets", "metadataPrefix", "datengeber", "timeout", "debug"],
         )
 
+        # If baseurl is not found, try 'url' as a fallback
+        if PRM["b_url"] is None:
+            PRM["b_url"] = read_yaml_file(PRM["conf_f"], ["url"])[0]
+
+        # If metadataPrefix is not found, try 'mprefix' as a fallback
+        if PRM["pref"] is None:
+            PRM["pref"] = read_yaml_file(PRM["conf_f"], ["mprefix"])[0]
+
+        # If datengeber is not found, try 'name' as a fallback
+        if PRM["dat_geb"] is None:
+            PRM["dat_geb"] = read_yaml_file(PRM["conf_f"], ["name"])[0]
+
         # outputfolder: if none is defined use the current working directory
         PRM["out_f"] = read_yaml_file(PRM["conf_f"], ["outputfolder"], os.getcwd())[0]
         # n_procs is not given in the config file, use default value
         PRM["n_procs"] = 16
-        PRM["b_url"], PRM["pref"] = (
-            re.sub(r"/\s$", "", PRM["b_url"]),
-            re.sub(r"\s$", "", PRM["pref"]),
-        )
+        # Clean up base URL and prefix if they are not None
+        if PRM["b_url"] is not None:
+            PRM["b_url"] = re.sub(r"/\s$", "", PRM["b_url"])
+        if PRM["pref"] is not None:
+            PRM["pref"] = re.sub(r"\s$", "", PRM["pref"])
 
         # Convert sets to a dictionary if it's a list
         if isinstance(PRM["sets"], list):
-            PRM["sets"] = {
-                "additive": PRM["sets"],
-                "intersection": [],
-            }  # Adjust as needed
+            # Handle backwards compatibility: treat "komplett" as no sets selected
+            filtered_sets = [s for s in PRM["sets"] if s.lower() != "komplett"]
+            PRM["sets"] = [
+                {
+                    "additive": filtered_sets,
+                    "intersection": [],
+                }
+            ]  # Wrap in a list to maintain expected format
     elif args.command == "auto":
         convert_common_args(args)
         PRM["auto_m"] = True
