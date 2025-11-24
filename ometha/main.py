@@ -121,7 +121,8 @@ def start_process():
 
     adapter = HTTPAdapter(
         max_retries=urllib3.util.retry.Retry(
-            total=4, status_forcelist=[429, 500, 502, 503, 504], backoff_factor=2
+            total=8, status_forcelist=[429, 500, 502, 503, 504], backoff_factor=3,
+            raise_on_status=False
         )
     )
     session = requests.Session()
