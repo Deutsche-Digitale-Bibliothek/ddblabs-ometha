@@ -2,6 +2,7 @@ import json
 import os
 import re
 import sys
+import time
 from collections import defaultdict
 from functools import partial
 from multiprocessing.dummy import Pool as ThreadPool
@@ -22,6 +23,7 @@ from tqdm import tqdm
 
 from ._version import __version__
 from .helpers import (
+    ACHTUNG,
     FEHLER,
     INFO,
     NAMESPACE,
@@ -47,13 +49,41 @@ def get_identifier(PRM: dict, url: str, session) -> list:
     spinner = Halo(spinner="dotes3")
 
     id_list = []
+    token_save_interval = 1000  # Save resumption token every 1000 IDs
+    last_token = None
+
     while True:
         spinner.start()
-        try:
-            response = session.get(url, verify=False, timeout=(20, 80))
-            root = isinvalid_xml_content(response, url, PRM["mode"])
-        except Exception as e:
-            handle_error(e, PRM["mode"], url)
+        retry_count = 0
+        max_retries = 3
+
+        while retry_count < max_retries:
+            try:
+                response = session.get(url, verify=False, timeout=(30, 120))
+                root = isinvalid_xml_content(response, url, PRM["mode"])
+                break  # Success, exit retry loop
+            except Exception as e:
+                retry_count += 1
+                if retry_count >= max_retries:
+                    # Save the last resumption token before exiting
+                    if last_token:
+                        token_file = os.path.join(PRM.get("out_f", "."), f"resumption_token_{TIMESTR}.txt")
+                        try:
+                            with open(token_file, "w") as f:
+                                f.write(f"Resume with: --resumptiontoken {last_token}\n")
+                                f.write(f"Last successful count: {len(id_list)} IDs\n")
+                                f.write(f"Token: {last_token}\n")
+                            print(f"\n{INFO}Resumption token saved to: {token_file}")
+                            logger.info(f"Saved resumption token to {token_file}")
+                        except Exception as save_err:
+                            logger.error(f"Could not save resumption token: {save_err}")
+                    handle_error(e, PRM["mode"], url)
+                else:
+                    wait_time = 10 * (2 ** retry_count)  # Exponential backoff: 20s, 40s, 80s
+                    print(f"\n{ACHTUNG}Retry {retry_count}/{max_retries} after {wait_time}s due to error...")
+                    logger.warning(f"Retrying after {wait_time}s (attempt {retry_count}/{max_retries})")
+                    time.sleep(wait_time)
+                    continue
 
         # zu Beginn ListSize ermitteln
         if id_list == []:
@@ -67,12 +97,27 @@ def get_identifier(PRM: dict, url: str, session) -> list:
 
         # Token auslesen
         token = root.findtext(f".//{NAMESPACE}resumptionToken")
+        if token:
+            last_token = token
         logger.info(f"Token: {token}") if PRM["debug"] else None
 
         # Die Objekte in listIdentifiers auslesen
         generated_ids = [ids.text for ids in root.findall(f".//{NAMESPACE}identifier")]
         id_list.extend(generated_ids)
         spinner.text = "Lade IDs: " + str(len(id_list))
+
+        # Periodically save resumption token for recovery
+        if token and len(id_list) % token_save_interval == 0:
+            token_file = os.path.join(PRM.get("out_f", "."), f"resumption_token_latest.txt")
+            try:
+                with open(token_file, "w") as f:
+                    f.write(f"Resume with: --resumptiontoken {token}\n")
+                    f.write(f"Current count: {len(id_list)} IDs\n")
+                    f.write(f"Token: {token}\n")
+                logger.info(f"Saved checkpoint at {len(id_list)} IDs")
+            except Exception as save_err:
+                logger.warning(f"Could not save resumption token checkpoint: {save_err}")
+
         # URL für nächste Suche zusammenbauen, wenn kein Token (== letzte Seite) loop beenden
         if not token:
             break
