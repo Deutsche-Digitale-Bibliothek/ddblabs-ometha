@@ -9,27 +9,50 @@ import sys
 import timeit
 
 import requests
+from loguru import logger
 import urllib3
 import yaml
 from colorama import Fore, Style, init
-from halo import Halo
-from loguru import logger
+from yaspin import yaspin
+from yaspin.spinners import Spinners
 from requests.adapters import HTTPAdapter
-from requests.exceptions import ConnectionError, HTTPError, Timeout
 
 from ._version import __version__
 from .cli import parseargs
-from .harvester import change_date, create_id_file, get_identifier, harvest_files
+from .harvester import (
+    change_date,
+    create_id_file,
+    get_identifier,
+    harvest_files,
+    read_yaml_file,
+)
 from .helpers import (
     ACHTUNG,
     FEHLER,
     INFO,
     SEP_LINE,
     TIMESTR,
+    configure_logging,
     log_critical_and_print_and_exit,
     print_and_log,
 )
 from .tui import interactiveMode
+
+
+def generate_id_harvesting_url(PRM: dict, set: str, session: requests.Session) -> list:
+    urlpar = {"from": "f_date", "until": "u_date", "metadataPrefix": "pref"}
+    base_url = f"{PRM['b_url']}?verb=ListIdentifiers&"
+    if PRM["res_tok"]:
+        url = f"{base_url}&resumptionToken={PRM['res_tok']}"
+        logger.info(
+            f"Fortsetzen des Identifier-Harvestings bei: {re.sub('/$', '', url)}"
+        )
+    else:
+        url = f"{base_url}{'&'.join(f'{name}={PRM[key]}' for name, key in urlpar.items() if PRM[key] is not None)}"
+    if set:
+        url = f"{url}&set={set}"
+
+    return get_identifier(PRM, url, session)
 
 
 def start_process():
@@ -94,10 +117,13 @@ def start_process():
     headers = {"User-Agent": headers["User-Agent"], "From": headers["From"]}
 
     # Session konfigurieren
-    assert_status_hook = lambda response, *args, **kwargs: response.raise_for_status()
+    def assert_status_hook(response, *args, **kwargs):
+        response.raise_for_status()
+
     adapter = HTTPAdapter(
         max_retries=urllib3.util.retry.Retry(
-            total=4, status_forcelist=[429, 500, 502, 503, 504], backoff_factor=2
+            total=8, status_forcelist=[429, 500, 502, 503, 504], backoff_factor=3,
+            raise_on_status=False
         )
     )
     session = requests.Session()
@@ -115,11 +141,14 @@ def start_process():
     if not PRM:
         logger.critical("No parameters were passed to Ometha.")
         sys.exit()
-    # Ordner für Log, Configfile und Output anlegen im aktuellen Verzeichnis
+    # output PRM dictionary if debug mode is enabled via environment variable
+    if os.getenv("OMETHA_DEBUG") == "True":
+        print(PRM)
+    # Create folder for log, config file and output in the current directory
     if PRM["out_f"] is None:
         PRM["out_f"] = os.path.join(os.getcwd(), "output")
     folder = os.path.join(PRM["out_f"], PRM["dat_geb"], TIMESTR)
-    folder= folder.replace(":","_")
+    folder = folder.replace(":", "_")
     os.makedirs(folder, exist_ok=True)
 
     # Logfile anlegen
@@ -146,6 +175,8 @@ def start_process():
     }
     for param, value in parameters.items():
         logger.log("PARAMETER", f"{param}: {value}")
+    if PRM["id_f"] is not None:
+        logger.log("PARAMETER", f"ID file: {PRM['id_f']}")
     print(f"{INFO}Logfile: {log_file}")
 
     # bei Configmode & Automode das Datum der Konfigurationsdatei aktualisieren
@@ -154,11 +185,29 @@ def start_process():
     # Baseurl anpassen/überprüfen
     PRM["b_url"] = re.sub(r"(\?.+)", "", PRM["b_url"]).rstrip("/")
     try:
-        with Halo(text=f"Accessing {PRM['b_url']}", spinner="dots"):
+        # try baseurl
+        with yaspin(Spinners.dots, text=f"Checking if {PRM['b_url']} is accessible"):
             session.get(PRM["b_url"], verify=False, timeout=(20, 80))
-    except (HTTPError, ConnectionError, Timeout) as e:
-        log_critical_and_print_and_exit(f"{FEHLER}{e}", PRM["mode"])
-        sys.exit()
+    except (
+        requests.exceptions.HTTPError,
+        requests.exceptions.RetryError,
+        urllib3.exceptions.MaxRetryError,
+    ):
+        print(f"{FEHLER} {PRM['b_url']} is not accessible. Trying with verb=Identify.")
+        try:
+            # try baseurl with verb Identify
+            with yaspin(Spinners.dots, text=f"Checking if {PRM['b_url']}?verb=Identify is accessible"):
+                session.get(
+                    PRM["b_url"] + "?verb=Identify", verify=False, timeout=(20, 80)
+                )
+        except (
+            requests.exceptions.HTTPError,
+            requests.exceptions.RetryError,
+            urllib3.exceptions.MaxRetryError,
+        ) as e:
+            # if both fail, log error and exit
+            log_critical_and_print_and_exit(f"{FEHLER}{e}", PRM["mode"])
+            sys.exit()
 
     # --------------------------------------------------------------------
     # Scraping
@@ -166,39 +215,40 @@ def start_process():
     # Timer starten
     start_time = timeit.default_timer()
 
-    # scraping wenn in der commandline kein resumptiontoken angegeben ist
-    def generate_id_harvesting_url(PRM, set):
-        urlpar = {"from": "f_date", "until": "u_date", "metadataPrefix": "pref"}
-        base_url = f"{PRM['b_url']}?verb=ListIdentifiers&"
-        if PRM["res_tok"]:
-            url = f"{base_url}&resumptionToken={PRM['res_tok']}"
-            logger.info(
-                f"Fortsetzen des Identifier-Harvestings bei: {re.sub('/$', '', url)}"
-            )
-        else:
-            url = f"{base_url}{'&'.join(f'{name}={PRM[key]}' for name, key in urlpar.items() if PRM[key] is not None)}"
-        if set:
-            url = f"{url}&set={set}"
-
-        return get_identifier(PRM, url, session)
-
-    if PRM["sets"] is not None:
-        # Initialize lists for comma and slash sets
-        a_sets = PRM.get("sets", {})[0].get("additive", [])
-        i_sets = PRM.get("sets", {})[0].get("intersection", [])
-        # Initialize lists for comma and slash ids
-        a_ids = [
-            id for a_set in a_sets for id in generate_id_harvesting_url(PRM, a_set)
-        ]
-        i_ids = [
-            id for i_set in i_sets for id in generate_id_harvesting_url(PRM, i_set)
-        ]
-        # If both i_ids and a_ids exist, get the common ids
-        ids = list(set(i_ids) & set(a_ids)) if i_ids else a_ids
+    if PRM["id_f"] is not None:
+        # read ids from file
+        print(f"{INFO} IDs werden aus {PRM['id_f']} gelesen.")
+        ids = read_yaml_file(PRM["id_f"], ["ids"])[0]
     else:
-        ids = generate_id_harvesting_url(PRM, set=None)
+        # get ids from url
+        if PRM["sets"]:  # Check if sets is not empty
+            # Initialize lists for comma and slash sets
+            # Extract the first dictionary from the sets list
+            sets_dict = PRM["sets"][0] if PRM["sets"] else {"additive": [], "intersection": []}
+            a_sets = sets_dict.get("additive", [])
+            i_sets = sets_dict.get("intersection", [])
 
-    create_id_file(PRM, ids, folder, type="successful")
+            # If both additive and intersection are empty, use set=None
+            if not a_sets and not i_sets:
+                ids = generate_id_harvesting_url(PRM, set=None, session=session)
+            else:
+            # Initialize lists for comma and slash ids
+                a_ids = [
+                    id
+                    for a_set in a_sets
+                    for id in generate_id_harvesting_url(PRM, a_set, session)
+                ]
+                i_ids = [
+                    id
+                    for i_set in i_sets
+                    for id in generate_id_harvesting_url(PRM, i_set, session)
+                ]
+                # If both i_ids and a_ids exist, get the common ids
+                ids = list(set(i_ids) & set(a_ids)) if i_ids else a_ids
+        else:
+            ids = generate_id_harvesting_url(PRM, set=None, session=session)
+
+        create_id_file(PRM, ids, folder, type="successful")
     # BUG If read from a yaml config file n_procs is a list with two values instead of an int
     # Dateiharvesting beginnen
     PRM["n_procs"] = (
@@ -217,7 +267,9 @@ def start_process():
             f"{SEP_LINE}{FEHLER} Keine IDs gefunden. Programm beendet."
         )
         sys.exit()
+    # ---- Start Harvesting ----
     failed_download, failed_ids = harvest_files(ids, PRM, folder, session)
+    # ---- Retry failed downloads ----
     if failed_ids or failed_download:
         # failed_ids: Beim Harvesting übersprungene Dateien (wegen Timeout/Connection-problem). Hier nochmal versuchen!
         print(f"Fehlgeschlagene IDs: {failed_ids}") if PRM["debug"] else None
@@ -247,10 +299,12 @@ def start_process():
     # bei Configmode & Automode das Datum der Konfigurationsdatei aktualisieren
     change_date(TIMESTR, PRM["conf_f"], key="from-Datum")
 
-    if os.name == "nt":  # Beenden unter Windows
+    if os.name == "nt":
+        # Beenden unter Windows
         input(f"{SEP_LINE}Drücken Sie Enter zum Beenden...")
     sys.exit()
 
 
 if __name__ == "__main__":
+    logger = configure_logging()
     start_process()

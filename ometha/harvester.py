@@ -2,6 +2,7 @@ import json
 import os
 import re
 import sys
+import time
 from collections import defaultdict
 from functools import partial
 from multiprocessing.dummy import Pool as ThreadPool
@@ -9,7 +10,8 @@ from urllib.parse import parse_qs, urlparse
 
 import xmltodict
 import yaml
-from halo import Halo
+from yaspin import yaspin
+from yaspin.spinners import Spinners
 from loguru import logger
 from requests.exceptions import (
     ConnectionError,
@@ -22,6 +24,7 @@ from tqdm import tqdm
 
 from ._version import __version__
 from .helpers import (
+    ACHTUNG,
     FEHLER,
     INFO,
     NAMESPACE,
@@ -44,21 +47,51 @@ def get_identifier(PRM: dict, url: str, session) -> list:
     :param session:
     :return: a list of all extracted identifiers
     """
-    spinner = Halo(text="Lade IDs...", spinner="dotes3")
+    spinner = yaspin(Spinners.dots)
     spinner.start()
+
     id_list = []
+    token_save_interval = 1000  # Save resumption token every 1000 IDs
+    last_token = None
+
     while True:
-        try:
-            response = session.get(url, verify=False, timeout=(20, 80))
-            root = isinvalid_xml_content(response, url, PRM["mode"])
-        except (Timeout, RetryError, HTTPError, ConnectionError) as e:
-            handle_error(e, PRM["mode"], url)
+        retry_count = 0
+        max_retries = 3
+
+        while retry_count < max_retries:
+            try:
+                response = session.get(url, verify=False, timeout=(30, 120))
+                root = isinvalid_xml_content(response, url, PRM["mode"])
+                break  # Success, exit retry loop
+            except Exception as e:
+                retry_count += 1
+                if retry_count >= max_retries:
+                    # Save the last resumption token before exiting
+                    if last_token:
+                        token_file = os.path.join(PRM.get("out_f", "."), f"resumption_token_{TIMESTR}.txt")
+                        try:
+                            with open(token_file, "w") as f:
+                                f.write(f"Resume with: --resumptiontoken {last_token}\n")
+                                f.write(f"Last successful count: {len(id_list)} IDs\n")
+                                f.write(f"Token: {last_token}\n")
+                            print(f"\n{INFO}Resumption token saved to: {token_file}")
+                            logger.info(f"Saved resumption token to {token_file}")
+                        except Exception as save_err:
+                            logger.error(f"Could not save resumption token: {save_err}")
+                    spinner.stop()
+                    handle_error(e, PRM["mode"], url)
+                else:
+                    wait_time = 10 * (2 ** retry_count)  # Exponential backoff: 20s, 40s, 80s
+                    print(f"\n{ACHTUNG}Retry {retry_count}/{max_retries} after {wait_time}s due to error...")
+                    logger.warning(f"Retrying after {wait_time}s (attempt {retry_count}/{max_retries})")
+                    time.sleep(wait_time)
+                    continue
 
         # zu Beginn ListSize ermitteln
         if id_list == []:
             list_size = re.search(r"completeListSize=[\"|'](\d+)[\"|']", response.text)
             print_and_log(
-                f"\n{INFO}Angegebene ListSize: {list_size.group(1)}",
+                f"{INFO}Angegebene ListSize: {list_size.group(1)}",
                 logger,
                 "info",
                 end="",
@@ -66,35 +99,53 @@ def get_identifier(PRM: dict, url: str, session) -> list:
 
         # Token auslesen
         token = root.findtext(f".//{NAMESPACE}resumptionToken")
+        if token:
+            last_token = token
         logger.info(f"Token: {token}") if PRM["debug"] else None
 
         # Die Objekte in listIdentifiers auslesen
         generated_ids = [ids.text for ids in root.findall(f".//{NAMESPACE}identifier")]
         id_list.extend(generated_ids)
+        spinner.text = "Lade IDs: " + str(len(id_list))
+
+        # Periodically save resumption token for recovery
+        if token and len(id_list) % token_save_interval == 0:
+            token_file = os.path.join(PRM.get("out_f", "."), f"resumption_token_latest.txt")
+            try:
+                with open(token_file, "w") as f:
+                    f.write(f"Resume with: --resumptiontoken {token}\n")
+                    f.write(f"Current count: {len(id_list)} IDs\n")
+                    f.write(f"Token: {token}\n")
+                logger.info(f"Saved checkpoint at {len(id_list)} IDs")
+            except Exception as save_err:
+                logger.warning(f"Could not save resumption token checkpoint: {save_err}")
 
         # URL für nächste Suche zusammenbauen, wenn kein Token (== letzte Seite) loop beenden
         if not token:
             break
         url = f"{PRM['b_url']}?verb=ListIdentifiers&resumptionToken={token}"
 
-    spinner.succeed(
-        f"Identifier Harvesting beendet. Insgesamt {len(id_list)} IDs bekommen."
-    )
+    spinner.text = f"Identifier Harvesting beendet. Insgesamt {len(id_list)} IDs bekommen."
+    spinner.ok("✓")
     logger.info(f"Letzte abgefragte URL: {PRM['b_url']}")
     logger.info("Identifier Harvesting beendet.")
 
     return id_list
 
 
-def harvest_files(ids, PRM, folder, session) -> list:
+def harvest_files(ids, PRM, folder, session) -> tuple[list, list]:
     """
     Liest ID Liste und lädt die IDs einzeln über GetRecord.
-    :param ids:
-    :param mode:
-    :return: failed_download, failed_ids ID-Lists
+    :param ids: List of IDs
+    :param PRM: dict of parameters
+    :param folder: str of the folder path
+    :return: tuple with failed_download, failed_ids ID-Lists
     """
 
     def save_file(oai_id: str, folder: str, response, export_type):
+        """
+        Is called by get_response_text_from_url and saves the response to a file.
+        """
         filename = re.sub(r"([:.|&%$=()\"#+\'´`*~<>!?/;,\[\]]|\s)", "_", oai_id)
         if export_type == "xml":
             with open(
@@ -118,14 +169,26 @@ def harvest_files(ids, PRM, folder, session) -> list:
             ) as of:
                 of.write(response)
 
-    def get_text(url, session, folder, export_type):
+    def get_response_text_from_url(url: str, session, folder: str, export_type: str):
+        """
+        Downloads the content from the given URL and saves it to a file.
+
+        Parameters:
+        url (str): The URL to download the content from.
+        session (requests.Session): The session to use for the download.
+        folder (str): The folder to save the downloaded content in.
+        export_type (str): The type of the export (used to determine if saved as XML or JSON).
+
+        Returns (only in case of an error):
+        dict: A dictionary containing the id of the failed download or failed id in case of an error.
+        """
         oai_id = parse_qs(urlparse(url).query)["identifier"][0]
         try:
             with session.get(url) as resp:
                 if resp.status_code != 200:
                     logger.critical(f"Statuscode {resp.status_code} bei {url}")
                     return {"failed_download": oai_id}
-                if errors := re.findall(r'error\scode="(.+)">(.+)<\\error', resp.text):
+                if errors := re.findall(r'error\scode="(.+)">(.+)</error>', resp.text):
                     logger.warning(
                         f"Datei {url} konnte nicht geharvestet werden ('{errors[0][0]}')"
                     )
@@ -158,7 +221,7 @@ def harvest_files(ids, PRM, folder, session) -> list:
             tqdm(
                 pool.imap(
                     partial(
-                        get_text,
+                        get_response_text_from_url,
                         session=session,
                         folder=folder,
                         export_type=PRM["exp_type"],
@@ -186,7 +249,11 @@ def harvest_files(ids, PRM, folder, session) -> list:
     return failed_download, failed_ids
 
 
-def change_date(date: str, name: str, key: str):
+def change_date(date: str, name: str, key: str) -> None:
+    """
+    Utility function: Change the date in the configuration file.
+    No return value, the function changes the file in place.
+    """
     if PRM["conf_m"] and PRM["auto_m"]:
         print_and_log(
             f"{SEP_LINE}{INFO} Setze das {key} der Konfigurationsdatei {PRM['conf_f']} auf das aktuelle Datum",
@@ -199,12 +266,12 @@ def change_date(date: str, name: str, key: str):
             yaml.safe_dump(doc, f, default_flow_style=False, sort_keys=False)
 
 
-def create_id_file(p, ids, folder, type=None):
+def create_id_file(PRM: dict, ids: list, folder: str, type=None) -> str:
     """
     Create an ID file with the given parameters.
 
     Args:
-        p (dict): The parameters dictionary.
+        PRM (dict): The parameters dictionary.
         ids (list): The list of IDs.
         folder (str): The folder path where the file will be created.
         type (str, optional): The type of the file. Defaults to None.
@@ -216,7 +283,7 @@ def create_id_file(p, ids, folder, type=None):
     file = os.path.join(folder, f"_ometha_{type}_ids.yaml")
     with open(file, "w", encoding="utf-8") as f:
         f.write(
-            f"Information: Liste erzeugt mit Ometha {__version__}\ndate: {TIMESTR}\nbaseurl: {p['b_url']}\nset: {p['sets']}\nmetadataPrefix: {p['pref']}\ndatengeber: {p['dat_geb']}\ntimeout: {p['timeout']}\ndebug: {p['debug']}\nfromdate: {p['f_date']}\nuntildate: {p['u_date']}\noutputfolder: {p['out_f']}\nids:\n"
+            f"Information: Liste erzeugt mit Ometha {__version__}\ndate: {TIMESTR}\nbaseurl: {PRM['b_url']}\nsets: {PRM['sets']}\nmetadataPrefix: {PRM['pref']}\ndatengeber: {PRM['dat_geb']}\ntimeout: {PRM['timeout']}\ndebug: {PRM['debug']}\nfromdate: {PRM['f_date']}\nuntildate: {PRM['u_date']}\noutputfolder: {PRM['out_f']}\nids:\n"
         )
         f.write("\n".join([f"- '{fid}'" for fid in ids]))
     return file

@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ometha"
+version = "2.0.0"
+description = "OAI Metadata Harvester"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "MIT"}
+authors = [
+    {name = "Karl-Ulrich Krägelin", email = "karlkraegelin@outlook.com"}
+]
+dependencies = [
+    "colorama>=0.4.6",
+    "loguru>=0.7.3",
+    "lxml>=6.0.2",
+    "p-tqdm>=1.4.2",
+    "pretty-errors>=1.2.25",
+    "progress>=1.6.1",
+    "pyyaml>=6.0.2",
+    "requests>=2.32.5",
+    "urllib3>=2.5.0",
+    "xmltodict>=1.0.2",
+    "yaspin>=3.4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+]
+
+
+[project.urls]
+Repository = "https://github.com/Deutsche-Digitale-Bibliothek/ddblabs-ometha"
+
+[project.scripts]
+ometha = "ometha.main:start_process"
+
+
+[tool.setuptools]
+packages = ["ometha"]
+
+[dependency-groups]
+dev = [
+    "requests-mock>=1.12.1",
+]

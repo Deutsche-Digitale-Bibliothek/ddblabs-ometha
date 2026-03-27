@@ -12,7 +12,7 @@ SEP_LINE = "--------------------------------------\n"
 ACHTUNG = f"{Fore.YELLOW}Achtung:\n {Fore.WHITE}"
 FEHLER = f"{Fore.RED}Fehler:\n  {Style.DIM}"
 INFO = f"{Fore.YELLOW}Information: {Fore.WHITE}"
-TIMESTR = time.strftime("%Y-%m-%dT%H:%M:%SZ")
+TIMESTR = time.strftime("%Y-%m-%d_%H_%M_%SZ")
 NAMESPACE = "{http://www.openarchives.org/OAI/2.0/}"
 ISODATEREGEX = "(?:19|20)[0-9]{2}-(?:(?:0[1-9]|1[0-2])-(?:0[1-9]|1[0-9]|2[0-9])|(?:(?!02)(?:0[1-9]|1[0-2])-(?:30))|(?:(?:0[13578]|1[02])-31))"
 URLREGEX = r"https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)"
@@ -37,6 +37,17 @@ PRM = {
     "mode": None,  # mode: str "ui" or "cli"
     "exp_type": None,  # export type either "xml" or "json"
 }
+
+
+def configure_logging():
+    logger.remove()  # Remove the default logger
+    logger.add(
+        sys.stderr,  # Log to standard error
+        level="ERROR",  # Only log errors and above
+        format="{time} {level} {message}",  # Customize the log format
+        backtrace=False,  # Disable backtrace
+        diagnose=False,  # Disable diagnostic information
+    )
 
 
 def print_and_log(message, logger, type: str, end="\n"):
@@ -76,6 +87,7 @@ def log_critical_and_print_and_exit(message, mode=None, exception=None):
     logger.critical(message)
     if exception:
         logger.exception("Exception details:", exc_info=exception)
+        sys.exit()
     if mode == "ui" and input(f"{message}\nDrücken Sie Enter zum Beenden..."):
         sys.exit()
 

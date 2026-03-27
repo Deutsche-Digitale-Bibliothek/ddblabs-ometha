@@ -32,11 +32,16 @@ def interactiveMode(session):
     def is_valid_url(url):
         return bool(re.search(r"https?://\S+", url))
 
-    how_to_start = get_valid_input(
-        "Bitte wählen Sie eine Option:\n\n- [N]ormales Harvesting\n- Harvesting von Records per [I]D-File\n- Harvesten von Identifiern fortsetzen mit einem [R]esumptionToken\n- Anzeige aller auf der Schnittstelle vorhandener [S]ets\n- Programm verlassen mit [E]xit\n => ",
-        lambda option: option in {"N", "I", "R", "S", "E", "n", "i", "r", "s", "e"},
-        "Die Eingabe wurde nicht verstanden. Geben Sie entweder N, I, S, R oder E ein.",
-    ).upper()
+    how_to_start_input = input("Bitte wählen Sie eine Option:\n\n- [N]ormales Harvesting\n- Harvesting von Records per [I]D-File\n- Harvesten von Identifiern fortsetzen mit einem [R]esumptionToken\n- Anzeige aller auf der Schnittstelle vorhandener [S]ets\n- Programm verlassen mit [E]xit\n => ").strip().upper()
+
+    # If no input is provided, default to "N"
+    how_to_start = how_to_start_input if how_to_start_input else "N"
+
+    # Validate the input
+    while how_to_start not in {"N", "I", "R", "S", "E"}:
+        print("Ungültige Option!")
+        how_to_start_input = input("Bitte wählen Sie eine Option:\n\n- [N]ormales Harvesting\n- Harvesting von Records per [I]D-File\n- Harvesten von Identifiern fortsetzen mit einem [R]esumptionToken\n- Anzeige aller auf der Schnittstelle vorhandener [S]ets\n- Programm verlassen mit [E]xit\n => ").strip().upper()
+        how_to_start = how_to_start_input if how_to_start_input else "N"
 
     def add_common_args():
         PRM["dat_geb"] = input("Datengeber: ") or TIMESTR
@@ -47,10 +52,10 @@ def interactiveMode(session):
             input("Anzahl an parallelen Downloads (default: 16): ") or 16
         )
         PRM["exp_type"] = get_valid_input(
-            "Exportformat (xml/json): ",
-            lambda x: x.lower() in {"xml", "json"},
+            "Exportformat (xml/json) (default: xml): ",
+            lambda x: x.lower() in {"xml", "json"} or x == "",
             "Kein korrektes Format!",
-        )
+        ) or "xml"
         PRM["timeout"] = float(input("Timeout in Sekunden (default: 0): ") or 0)
 
     if how_to_start == "E":
@@ -66,9 +71,10 @@ def interactiveMode(session):
             lambda prefix: bool(prefix),
             "Feld darf nicht leer sein!",
         )
+        # if the user doesnt enter anything, set to "all"
         PRM["sets"] = [
             parse_set_values(
-                input("Set(s) kommagetrennt oder (für Schnittmenge mit '/' getrennt): ")
+                input("Set(s) kommagetrennt oder (für Schnittmenge mit '/' getrennt, default: keine Eingrenzung): ")
                 or None
             )
         ]
