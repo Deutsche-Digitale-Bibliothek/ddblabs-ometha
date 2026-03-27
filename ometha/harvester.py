@@ -187,7 +187,7 @@ def harvest_files(ids, PRM, folder, session) -> tuple[list, list]:
                 if resp.status_code != 200:
                     logger.critical(f"Statuscode {resp.status_code} bei {url}")
                     return {"failed_download": oai_id}
-                if errors := re.findall(r'error\scode="(.+)">(.+)<\\error', resp.text):
+                if errors := re.findall(r'error\scode="(.+)">(.+)</error>', resp.text):
                     logger.warning(
                         f"Datei {url} konnte nicht geharvestet werden ('{errors[0][0]}')"
                     )

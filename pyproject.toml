@@ -43,3 +43,8 @@ ometha = "ometha.main:start_process"
 
 [tool.setuptools]
 packages = ["ometha"]
+
+[dependency-groups]
+dev = [
+    "requests-mock>=1.12.1",
+]
