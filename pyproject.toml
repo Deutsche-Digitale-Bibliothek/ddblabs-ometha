@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ometha"
-version = "2.0.1"
+version = "2.0.2"
 description = "OAI Metadata Harvester"
 readme = "README.md"
 requires-python = ">=3.12"
-license = {text = "MIT"}
+license = { text = "MIT" }
 authors = [
-    {name = "Karl-Ulrich Krägelin", email = "karlkraegelin@outlook.com"}
+    { name = "Karl-Ulrich Krägelin", email = "karlkraegelin@outlook.com" },
 ]
 dependencies = [
     "colorama>=0.4.6",
@@ -27,10 +27,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.4.0",
-    "pytest-cov>=4.1.0",
-]
+dev = ["pytest>=7.4.0", "pytest-cov>=4.1.0"]
 
 
 [project.urls]
@@ -44,6 +41,4 @@ ometha = "ometha.main:start_process"
 packages = ["ometha"]
 
 [dependency-groups]
-dev = [
-    "requests-mock>=1.12.1",
-]
+dev = ["requests-mock>=1.12.1"]
