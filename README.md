@@ -29,23 +29,40 @@ Harvesting eines Sets mit 19999 Datensätzen von der OAI Schnittstelle der Deuts
 
 # Installation
 
-- Entweder vorkompilierte Ausführbare Datei herunterladen: https://github.com/Deutsche-Digitale-Bibliothek/ddblabs-ometha/releases - erfordert keine weiteren Installationen
-- oder Download des Git-Repositorys (bzw. [eines Releases](https://github.com/Deutsche-Digitale-Bibliothek/ddblabs-ometha/releases)) und Installation von Python (mind. Version 3.8), dann in der Kommandozeile im Verzeichnis des Repos: `pip install -r requirements.txt`
-  - dann start bspw. über
-    ```python
-    import ometha
-    ometha.main()
-    ```
-    oder Nutzung der einzelnen Module separat.
-- oder `pip install ometha` bzw. `pip install .` -> damit ist Ometha systemweit aufrufbar (bzw. bei Verwendung eines Virtual Environments nach Aktivierung des selben.)
-- Nutzung von `pipenv`: 
-  ```bash
-  git clone git@github.com:Deutsche-Digitale-Bibliothek/ddblabs-ometha.git
-  cd ddblabs-ometha
-  pipenv install
-  pipenv shell
-  ometha --version  
-  ```
+## Empfohlen: uvx
+
+Kein vorheriges Installieren nötig – `uv` richtet automatisch eine isolierte Umgebung ein:
+
+```bash
+uvx ometha
+```
+
+Für dauerhafte Installation (einmalig, danach direkt als `ometha` aufrufbar):
+
+```bash
+uv tool install ometha
+ometha --version
+```
+
+## pip
+
+```bash
+pip install ometha
+```
+
+## Ausführbare Datei (kein Python erforderlich)
+
+Vorkompilierte `.exe` / Binaries für Windows und Linux:
+<https://github.com/Deutsche-Digitale-Bibliothek/ddblabs-ometha/releases>
+
+## Aus dem Quellcode
+
+```bash
+git clone git@github.com:Deutsche-Digitale-Bibliothek/ddblabs-ometha.git
+cd ddblabs-ometha
+uv sync
+uv run ometha --version
+```
 
 ## Windows: SmartScreen
 
