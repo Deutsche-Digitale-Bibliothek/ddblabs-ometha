@@ -13,7 +13,8 @@ from loguru import logger
 import urllib3
 import yaml
 from colorama import Fore, Style, init
-from halo import Halo
+from yaspin import yaspin
+from yaspin.spinners import Spinners
 from requests.adapters import HTTPAdapter
 
 from ._version import __version__
@@ -185,7 +186,7 @@ def start_process():
     PRM["b_url"] = re.sub(r"(\?.+)", "", PRM["b_url"]).rstrip("/")
     try:
         # try baseurl
-        with Halo(text=f"Checking if {PRM['b_url']} is accessible", spinner="dots"):
+        with yaspin(Spinners.dots, text=f"Checking if {PRM['b_url']} is accessible"):
             session.get(PRM["b_url"], verify=False, timeout=(20, 80))
     except (
         requests.exceptions.HTTPError,
@@ -195,10 +196,7 @@ def start_process():
         print(f"{FEHLER} {PRM['b_url']} is not accessible. Trying with verb=Identify.")
         try:
             # try baseurl with verb Identify
-            with Halo(
-                text=f"Checking if {PRM['b_url']}?verb=Identify is accessible",
-                spinner="dots",
-            ):
+            with yaspin(Spinners.dots, text=f"Checking if {PRM['b_url']}?verb=Identify is accessible"):
                 session.get(
                     PRM["b_url"] + "?verb=Identify", verify=False, timeout=(20, 80)
                 )

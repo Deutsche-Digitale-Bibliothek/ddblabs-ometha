@@ -10,7 +10,8 @@ from urllib.parse import parse_qs, urlparse
 
 import xmltodict
 import yaml
-from halo import Halo
+from yaspin import yaspin
+from yaspin.spinners import Spinners
 from loguru import logger
 from requests.exceptions import (
     ConnectionError,
@@ -46,14 +47,14 @@ def get_identifier(PRM: dict, url: str, session) -> list:
     :param session:
     :return: a list of all extracted identifiers
     """
-    spinner = Halo(spinner="dotes3")
+    spinner = yaspin(Spinners.dots)
+    spinner.start()
 
     id_list = []
     token_save_interval = 1000  # Save resumption token every 1000 IDs
     last_token = None
 
     while True:
-        spinner.start()
         retry_count = 0
         max_retries = 3
 
@@ -77,6 +78,7 @@ def get_identifier(PRM: dict, url: str, session) -> list:
                             logger.info(f"Saved resumption token to {token_file}")
                         except Exception as save_err:
                             logger.error(f"Could not save resumption token: {save_err}")
+                    spinner.stop()
                     handle_error(e, PRM["mode"], url)
                 else:
                     wait_time = 10 * (2 ** retry_count)  # Exponential backoff: 20s, 40s, 80s
@@ -123,9 +125,8 @@ def get_identifier(PRM: dict, url: str, session) -> list:
             break
         url = f"{PRM['b_url']}?verb=ListIdentifiers&resumptionToken={token}"
 
-    spinner.succeed(
-        f"Identifier Harvesting beendet. Insgesamt {len(id_list)} IDs bekommen."
-    )
+    spinner.text = f"Identifier Harvesting beendet. Insgesamt {len(id_list)} IDs bekommen."
+    spinner.ok("✓")
     logger.info(f"Letzte abgefragte URL: {PRM['b_url']}")
     logger.info("Identifier Harvesting beendet.")
 
