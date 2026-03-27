@@ -57,7 +57,8 @@ def generate_id_harvesting_url(PRM: dict, set: str, session: requests.Session) -
 
 def start_process():
     multiprocessing.freeze_support()  # multiprocessing Einstellung
-    multiprocessing.set_start_method("fork") if sys.platform == "darwin" else None
+    if sys.platform == "darwin" and multiprocessing.get_start_method(allow_none=True) is None:
+        multiprocessing.set_start_method("fork")
     init(autoreset=True)  # Colorama Einstellung:
 
     if getattr(sys, "frozen", False):
