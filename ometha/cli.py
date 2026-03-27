@@ -19,8 +19,8 @@ def parseargs() -> dict:
             "--parallel",
             "-p",
             type=int,
-            help="Number of parallel downloads (default: 16)",
-            default=16,
+            help="Number of parallel downloads (default: auto)",
+            default=None,
         )
         s.add_argument(
             "--timeout",
@@ -198,8 +198,8 @@ def parseargs() -> dict:
 
         # outputfolder: if none is defined use the current working directory
         PRM["out_f"] = read_yaml_file(PRM["conf_f"], ["outputfolder"], os.getcwd())[0]
-        # n_procs is not given in the config file, use default value
-        PRM["n_procs"] = 16
+        # n_procs: read from config file, None means auto-scale based on ID count
+        PRM["n_procs"] = read_yaml_file(PRM["conf_f"], ["numberofprocesses"])[0]
         # Clean up base URL and prefix if they are not None
         if PRM["b_url"] is not None:
             PRM["b_url"] = re.sub(r"/\s$", "", PRM["b_url"])

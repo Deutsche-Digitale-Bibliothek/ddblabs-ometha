@@ -250,12 +250,12 @@ def start_process():
             ids = generate_id_harvesting_url(PRM, set=None, session=session)
 
         create_id_file(PRM, ids, folder, type="successful")
-    # BUG If read from a yaml config file n_procs is a list with two values instead of an int
     # Dateiharvesting beginnen
+    # None means no explicit value was given → auto-scale based on ID count (max 16)
     PRM["n_procs"] = (
         min(int(2 * len(ids) / 300 + 4), 16)
-        if PRM["n_procs"] == 16
-        else min(PRM["n_procs"], 100)
+        if PRM["n_procs"] is None
+        else min(int(PRM["n_procs"]), 100)
     )
     logger.info(
         f"Anzahl der parallelen Downloads auf {PRM['n_procs']} gesetzt (auf Basis der Anzahl an IDs)."

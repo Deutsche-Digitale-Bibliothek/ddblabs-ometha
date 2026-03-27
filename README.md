@@ -15,11 +15,12 @@ Die zweite Anforderung an den Harvester ist der Spagat zwischen der Möglichkeit
 Harvesting eines Sets mit 19999 Datensätzen von der OAI Schnittstelle der Deutschen Digitalen Bibliothek:
 
 1. Ometha
-   - `Ometha default -b https://oai.deutsche-digitale-bibliothek.de/ -s 10443700598299947xcYN -m ddb`
+   - `ometha default -b https://oai.deutsche-digitale-bibliothek.de/ -s 10443700598299947xcYN -m ddb`
    - 6:19 Minuten -> Log, ID List & jeder Record in einer XML Datei
 2. [Metha](https://github.com/miku/metha):
    - `metha-sync https://oai.deutsche-digitale-bibliothek.de/ -set 10443700598299947xcYN -format ddb`
    - 6:33 Minuten -> gzipped XMLs mit jeweils 300 Records pro File (Abruf über ListRecords)
+   See https://github.com/Deutsche-Digitale-Bibliothek/ddblabs-ometha/issues/3 !
 3. [oai-pmh](https://github.com/paperhive/oai-pmh):
    - `oai-pmh list-records -s 10443700598299947xcYN -p ddb https://oai.deutsche-digitale-bibliothek.de/ > ddbfiles.txt`
    - 13:17 Minuten -> JSON statt XML Return
@@ -52,7 +53,7 @@ pip install ometha
 
 ## Ausführbare Datei (kein Python erforderlich)
 
-Vorkompilierte `.exe` / Binaries für Windows und Linux:
+Vorkompilierte `.exe` / Binaries für Windows, macOS und Linux:
 <https://github.com/Deutsche-Digitale-Bibliothek/ddblabs-ometha/releases>
 
 ## Aus dem Quellcode
@@ -117,7 +118,7 @@ Optionale Parameter:
 Ometha unterstützt Harvesting über Konfigurationsdateien. So können Harvestingvorgänge komplett automatisiert werden und auch per cronjob o. ä. aufgerufen werden. Beim Aufruf mit dem _positional_ Argument `conf` und dem Argument `-c` mit dem Pfad zu einer entsprechenden Konfigurationsdatei (`ometha conf -c /pfad/zur/konfigurationsdatei.yaml`) werden alle Parameter aus einer YAML Datei gelesen:
 
 ```
-ometha.py conf -c saarland.yaml
+ometha conf -c saarland.yaml
 ```
 
 Mit dem optionalen Parameter `-a` bzw. `--auto` wird der **Automatikmodus** für die Angaben des from- und until-Datums aktiviert: Dabei wird beim Start der until-Wert auf das aktuelle Datum gesetzt und somit der Zeitraum vom angegebenen from-Date bis zum aktuellen Zeitpunkt geharvestet, nach erfolgreichem Harvesting wird dann der from-Wert auf das aktuelle Datum gesetzt. Beim nächsten Harvesting Vorgang wird wieder zunächst das until-Datum aktualisiert, so dass immer der Zeitraum seit dem letzten Harvesting Vorgang eingestellt ist.
@@ -125,13 +126,12 @@ Mit dem optionalen Parameter `-a` bzw. `--auto` wird der **Automatikmodus** für
 Beispiel für eine Konfigurationsdatei:
 
 ```yaml
-name: Saarland
 baseurl: https://digital.sulb.uni-saarland.de/viewer/oai/
 metadataPrefix: mets
 datengeber: SULB
 sets:
   - hk
-# multiple Sets:
+# Mehrere Sets:
 # sets:
 #   - Seteins
 #   - Setzwei
@@ -140,13 +140,11 @@ untildate: null
 timeout: 0
 outputfolder: null
 debug: false
-# Angabe der parallelen Downloads:
-numberofprocesses: 8
+# Anzahl paralleler Downloads (optional, default: automatisch basierend auf ID-Anzahl):
+# numberofprocesses: 8
 ```
 
-In den Konfigurationsdateien sind **alle Keys obligatorisch** (das wird aber auch geprüft).
-
-Leere Werte sind nicht zulässig bei `baseurl`, und `metadataPrefix`; sinnvoll ist die Angabe und `datengeber`. Der Key `debug` nimmt nur die Werte `true` und `false` annehmen, der Key `timeout` nur Zahlen. Alle anderen Keys erwarten Strings; from- und until-date können aber auch als Datum (ohne Anführungszeichen) eingegeben werden. Lazy erwartet `true` oder `null`
+Pflichtfelder sind `baseurl` und `metadataPrefix`. Der Key `debug` nimmt nur die Werte `true` und `false` an, der Key `timeout` nur Zahlen. From- und until-date können als String (mit Anführungszeichen) oder als Datum (ohne Anführungszeichen) eingegeben werden. Alle anderen Keys sind optional und können `null` sein.
 
 Kommandozeilen Parameter für den `conf` Modus:
 
@@ -166,7 +164,7 @@ optional arguments:
 Versucht, die Parameter aus einer kompletten OAI-URL auszulesen. Einziger Parameter ist `-u` für die URL:
 
 ```
-Ometha auto -u https://digital.sulb.uni-saarland.de/viewer/oai/?verb=ListIdentifiers&metadataPrefix=mets&until=2021-01-01&set=saarlandica
+ometha auto -u https://digital.sulb.uni-saarland.de/viewer/oai/?verb=ListIdentifiers&metadataPrefix=mets&until=2021-01-01&set=saarlandica
 ```
 
 ```
@@ -184,8 +182,7 @@ optional arguments:
 Für den Fall, dass eine bereits mit Ometha erstellte ID Liste geharvestet werden soll, nutzt man den `ids` Modus:
 
 ```
-usage: Ometha ids [-h] --idfile IDFILE [--lazy] [--datengeber DATENGEBER]
-                  [--debug]
+usage: ometha ids [-h] --idfile IDFILE [--datengeber DATENGEBER] [--debug]
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -202,7 +199,9 @@ optional arguments:
 
 ## Errorhandling: Abbruch beim Harvesten der OAI-Identifier
 
-Falls beim Harvesten der OAI-IDs etwas schief geht, reicht es, sich den letzten anzeigten Resumption-Token zu notieren (bzw. in der Log-Datei zu schauen) und Ometha dann mit dem zusätzlichen Parameter `--resumptiontoken=resumptiontoken` auszuführen bzw. beim interaktiven Modus die Option `[R]` zu wählen:
+Während des ID-Harvestings speichert Ometha automatisch alle 1000 IDs einen Checkpoint: Die aktuelle `resumptionToken` wird in `resumption_token_latest.txt` im Ausgabeordner geschrieben. Bei einem Verbindungsabbruch wird zusätzlich eine zeitgestempelte Datei `resumption_token_<timestamp>.txt` angelegt.
+
+Falls beim Harvesten der OAI-IDs etwas schief geht, reicht es, sich den letzten angezeigten Resumption-Token zu notieren (bzw. in der Checkpoint-Datei oder Log-Datei zu schauen) und Ometha dann mit dem zusätzlichen Parameter `--resumptiontoken=resumptiontoken` auszuführen bzw. beim interaktiven Modus die Option `[R]` zu wählen:
 
 ```
 ometha default -b https://oai.schnittstelle.de -m metadataprefix -d ordnername --resumptiontoken=nEk0tn0itpmuser
