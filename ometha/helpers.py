@@ -1,10 +1,12 @@
 import re
 import sys
 import time
+from typing import Any
 
 from colorama import Fore, Style
 from loguru import logger
 from lxml import etree
+from requests import Response
 from requests.exceptions import ConnectionError, HTTPError, RetryError, Timeout
 
 # define global variables reused throughout the code
@@ -39,7 +41,8 @@ PRM = {
 }
 
 
-def configure_logging():
+def configure_logging() -> None:
+    """Configure loguru to output only ERROR-level messages to stderr."""
     logger.remove()  # Remove the default logger
     logger.add(
         sys.stderr,  # Log to standard error
@@ -50,7 +53,15 @@ def configure_logging():
     )
 
 
-def print_and_log(message, logger, type: str, end="\n"):
+def print_and_log(message: str, logger: Any, type: str, end: str = "\n") -> None:
+    """Print a message and log it, stripping ANSI prefix constants before logging.
+
+    Args:
+        message: The message to print and log.
+        logger: The loguru logger instance.
+        type: Log level — either ``"info"`` or ``"warning"``.
+        end: String appended after the printed message. Defaults to newline.
+    """
     print(message, end)
     for placeholder in [SEP_LINE, ACHTUNG, INFO, FEHLER]:
         if placeholder in message:
@@ -61,7 +72,15 @@ def print_and_log(message, logger, type: str, end="\n"):
         logger.warning(message)
 
 
-def handle_error(e, mode, url=None):
+def handle_error(e: Exception, mode: str | None, url: str | None = None) -> None:
+    """Handle a request exception by logging a descriptive message and exiting.
+
+    Args:
+        e: The exception that was raised.
+        mode: Run mode (``"ui"`` or ``"cli"``), forwarded to
+            ``log_critical_and_print_and_exit``.
+        url: URL that was being requested when the error occurred.
+    """
     error_messages = {
         Timeout: "Timeout determining list size. The API is not reachable.",
         RetryError: "Identifier harvesting aborted due to too many retries. Is the API reachable?",
@@ -82,7 +101,18 @@ def handle_error(e, mode, url=None):
         log_critical_and_print_and_exit("An unexpected error occurred.", mode, e)
 
 
-def log_critical_and_print_and_exit(message, mode=None, exception=None):
+def log_critical_and_print_and_exit(
+    message: str,
+    mode: str | None = None,
+    exception: Exception | None = None,
+) -> None:
+    """Print a critical error message, log it, and exit the program.
+
+    Args:
+        message: The error message to display and log.
+        mode: If ``"ui"``, prompts the user to press Enter before exiting.
+        exception: Optional exception logged with full traceback details.
+    """
     print(message)
     logger.critical(message)
     if exception:
@@ -92,7 +122,20 @@ def log_critical_and_print_and_exit(message, mode=None, exception=None):
         sys.exit()
 
 
-def isinvalid_xml_content(response, url, mode):
+def isinvalid_xml_content(response: Response, url: str, mode: str) -> etree._Element:
+    """Parse and validate the XML content of an HTTP response.
+
+    Args:
+        response: The HTTP response whose content will be parsed.
+        url: URL of the request, included in the error message on parse failure.
+        mode: Run mode passed to ``log_critical_and_print_and_exit`` on error.
+
+    Returns:
+        The root element of the parsed XML document.
+
+    Raises:
+        SystemExit: If the response content is not valid XML.
+    """
     try:
         root = etree.XML(response.content)
     except etree.XMLSyntaxError as e:

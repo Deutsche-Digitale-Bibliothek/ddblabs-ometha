@@ -27,8 +27,10 @@ from ometha.tui import interactiveMode
 # Fixture: PRM zurücksetzen und minimale Session bereitstellen
 # ---------------------------------------------------------------------------
 
+
 def reset_prm():
     import ometha.helpers as h
+
     for key in h.PRM:
         h.PRM[key] = None
 
@@ -67,12 +69,22 @@ def mock_inputs(*values):
 #  10. Fromdate           → ""
 #  11. Untildate          → ""
 
-N_INPUTS = ["N", "testDG", "/tmp", "4", "xml", "0",
-            "http://oai.example.org/", "oai_dc", "", "", ""]
+N_INPUTS = [
+    "N",
+    "testDG",
+    "/tmp",
+    "4",
+    "xml",
+    "0",
+    "http://oai.example.org/",
+    "oai_dc",
+    "",
+    "",
+    "",
+]
 
 
 class TestOptionN:
-
     def test_prm_baseurl_set(self, session):
         with mock_inputs(*N_INPUTS):
             prm = interactiveMode(session)
@@ -119,37 +131,92 @@ class TestOptionN:
         assert prm["u_date"] is None
 
     def test_fromdate_provided(self, session):
-        inputs = ["N", "testDG", "/tmp", "4", "xml", "0",
-                  "http://oai.example.org/", "oai_dc", "", "2023-01-01", ""]
+        inputs = [
+            "N",
+            "testDG",
+            "/tmp",
+            "4",
+            "xml",
+            "0",
+            "http://oai.example.org/",
+            "oai_dc",
+            "",
+            "2023-01-01",
+            "",
+        ]
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
         assert prm["f_date"] == "2023-01-01"
 
     def test_untildate_provided(self, session):
-        inputs = ["N", "testDG", "/tmp", "4", "xml", "0",
-                  "http://oai.example.org/", "oai_dc", "", "", "2023-12-31"]
+        inputs = [
+            "N",
+            "testDG",
+            "/tmp",
+            "4",
+            "xml",
+            "0",
+            "http://oai.example.org/",
+            "oai_dc",
+            "",
+            "",
+            "2023-12-31",
+        ]
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
         assert prm["u_date"] == "2023-12-31"
 
     def test_set_provided(self, session):
-        inputs = ["N", "testDG", "/tmp", "4", "xml", "0",
-                  "http://oai.example.org/", "oai_dc", "ddc:500", "", ""]
+        inputs = [
+            "N",
+            "testDG",
+            "/tmp",
+            "4",
+            "xml",
+            "0",
+            "http://oai.example.org/",
+            "oai_dc",
+            "ddc:500",
+            "",
+            "",
+        ]
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
         assert prm["sets"][0]["additive"] == ["ddc:500"]
 
     def test_json_exporttype(self, session):
-        inputs = ["N", "testDG", "/tmp", "4", "json", "0",
-                  "http://oai.example.org/", "oai_dc", "", "", ""]
+        inputs = [
+            "N",
+            "testDG",
+            "/tmp",
+            "4",
+            "json",
+            "0",
+            "http://oai.example.org/",
+            "oai_dc",
+            "",
+            "",
+            "",
+        ]
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
         assert prm["exp_type"] == "json"
 
     def test_datengeber_default_wenn_leer(self, session):
         """Leeres Datengeber-Feld → TIMESTR-Default."""
-        inputs = ["N", "", "/tmp", "4", "xml", "0",
-                  "http://oai.example.org/", "oai_dc", "", "", ""]
+        inputs = [
+            "N",
+            "",
+            "/tmp",
+            "4",
+            "xml",
+            "0",
+            "http://oai.example.org/",
+            "oai_dc",
+            "",
+            "",
+            "",
+        ]
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
         # TIMESTR ist ein nicht-leerer String
@@ -158,64 +225,156 @@ class TestOptionN:
 
     def test_outputfolder_default_ist_cwd(self, session):
         """Leeres Ordner-Feld → aktuelles Arbeitsverzeichnis."""
-        inputs = ["N", "testDG", "", "4", "xml", "0",
-                  "http://oai.example.org/", "oai_dc", "", "", ""]
+        inputs = [
+            "N",
+            "testDG",
+            "",
+            "4",
+            "xml",
+            "0",
+            "http://oai.example.org/",
+            "oai_dc",
+            "",
+            "",
+            "",
+        ]
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
         assert prm["out_f"] == os.getcwd()
 
     def test_n_procs_default_wenn_leer(self, session):
         """Leeres Parallele-Downloads-Feld → Default 16."""
-        inputs = ["N", "testDG", "/tmp", "", "xml", "0",
-                  "http://oai.example.org/", "oai_dc", "", "", ""]
+        inputs = [
+            "N",
+            "testDG",
+            "/tmp",
+            "",
+            "xml",
+            "0",
+            "http://oai.example.org/",
+            "oai_dc",
+            "",
+            "",
+            "",
+        ]
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
         assert prm["n_procs"] == 16
 
     def test_invalid_exporttype_retried(self, session):
         """Ungültiges Exportformat → TUI fragt erneut."""
-        inputs = ["N", "testDG", "/tmp", "4", "lido", "xml", "0",
-                  "http://oai.example.org/", "oai_dc", "", "", ""]
+        inputs = [
+            "N",
+            "testDG",
+            "/tmp",
+            "4",
+            "lido",
+            "xml",
+            "0",
+            "http://oai.example.org/",
+            "oai_dc",
+            "",
+            "",
+            "",
+        ]
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
         assert prm["exp_type"] == "xml"
 
     def test_invalid_url_retried(self, session):
         """Ungültige URL → TUI fragt erneut, bis valide URL kommt."""
-        inputs = ["N", "testDG", "/tmp", "4", "xml", "0",
-                  "keine-url", "http://oai.example.org/", "oai_dc", "", "", ""]
+        inputs = [
+            "N",
+            "testDG",
+            "/tmp",
+            "4",
+            "xml",
+            "0",
+            "keine-url",
+            "http://oai.example.org/",
+            "oai_dc",
+            "",
+            "",
+            "",
+        ]
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
         assert prm["b_url"] == "http://oai.example.org/"
 
     def test_empty_prefix_retried(self, session):
         """Leeres Prefix-Feld → TUI fragt erneut."""
-        inputs = ["N", "testDG", "/tmp", "4", "xml", "0",
-                  "http://oai.example.org/", "", "oai_dc", "", "", ""]
+        inputs = [
+            "N",
+            "testDG",
+            "/tmp",
+            "4",
+            "xml",
+            "0",
+            "http://oai.example.org/",
+            "",
+            "oai_dc",
+            "",
+            "",
+            "",
+        ]
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
         assert prm["pref"] == "oai_dc"
 
     def test_lowercase_n_accepted(self, session):
         """Kleinbuchstabe 'n' soll wie 'N' behandelt werden."""
-        inputs = ["n", "testDG", "/tmp", "4", "xml", "0",
-                  "http://oai.example.org/", "oai_dc", "", "", ""]
+        inputs = [
+            "n",
+            "testDG",
+            "/tmp",
+            "4",
+            "xml",
+            "0",
+            "http://oai.example.org/",
+            "oai_dc",
+            "",
+            "",
+            "",
+        ]
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
         assert prm["b_url"] == "http://oai.example.org/"
 
     def test_empty_input_defaults_to_n(self, session):
         """Leere Hauptmenü-Eingabe → Default 'N'."""
-        inputs = ["", "testDG", "/tmp", "4", "xml", "0",
-                  "http://oai.example.org/", "oai_dc", "", "", ""]
+        inputs = [
+            "",
+            "testDG",
+            "/tmp",
+            "4",
+            "xml",
+            "0",
+            "http://oai.example.org/",
+            "oai_dc",
+            "",
+            "",
+            "",
+        ]
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
         assert prm["b_url"] == "http://oai.example.org/"
 
     def test_invalid_menu_option_retried(self, session):
         """Ungültige Menüoption → TUI fragt erneut."""
-        inputs = ["X", "N", "testDG", "/tmp", "4", "xml", "0",
-                  "http://oai.example.org/", "oai_dc", "", "", ""]
+        inputs = [
+            "X",
+            "N",
+            "testDG",
+            "/tmp",
+            "4",
+            "xml",
+            "0",
+            "http://oai.example.org/",
+            "oai_dc",
+            "",
+            "",
+            "",
+        ]
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
         assert prm["b_url"] == "http://oai.example.org/"
@@ -225,8 +384,8 @@ class TestOptionN:
 # Option E – Programm beenden
 # ---------------------------------------------------------------------------
 
-class TestOptionE:
 
+class TestOptionE:
     def test_exit_called(self, session):
         with mock_inputs("E"):
             with pytest.raises(SystemExit):
@@ -253,12 +412,20 @@ class TestOptionE:
 #   8. Metadata Prefix    → "oai_dc"
 #   9. ResumptionToken    → "abc123"
 
-R_INPUTS = ["R", "testDG", "/tmp", "4", "xml", "0",
-            "http://oai.example.org/", "oai_dc", "abc123"]
+R_INPUTS = [
+    "R",
+    "testDG",
+    "/tmp",
+    "4",
+    "xml",
+    "0",
+    "http://oai.example.org/",
+    "oai_dc",
+    "abc123",
+]
 
 
 class TestOptionR:
-
     def test_resumption_token_set(self, session):
         with mock_inputs(*R_INPUTS):
             prm = interactiveMode(session)
@@ -276,15 +443,34 @@ class TestOptionR:
 
     def test_empty_token_retried(self, session):
         """Leerer ResumptionToken → TUI fragt erneut."""
-        inputs = ["R", "testDG", "/tmp", "4", "xml", "0",
-                  "http://oai.example.org/", "oai_dc", "", "tok456"]
+        inputs = [
+            "R",
+            "testDG",
+            "/tmp",
+            "4",
+            "xml",
+            "0",
+            "http://oai.example.org/",
+            "oai_dc",
+            "",
+            "tok456",
+        ]
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
         assert prm["res_tok"] == "tok456"
 
     def test_lowercase_r_accepted(self, session):
-        inputs = ["r", "testDG", "/tmp", "4", "xml", "0",
-                  "http://oai.example.org/", "oai_dc", "tok789"]
+        inputs = [
+            "r",
+            "testDG",
+            "/tmp",
+            "4",
+            "xml",
+            "0",
+            "http://oai.example.org/",
+            "oai_dc",
+            "tok789",
+        ]
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
         assert prm["res_tok"] == "tok789"
@@ -314,7 +500,6 @@ ID_FILE_CONTENT = (
 
 
 class TestOptionI:
-
     def test_baseurl_from_idfile(self, session, tmp_path):
         id_file = tmp_path / "ids.yaml"
         id_file.write_text(ID_FILE_CONTENT, encoding="utf-8")
@@ -347,8 +532,16 @@ class TestOptionI:
         id_file = tmp_path / "ids.yaml"
         id_file.write_text(ID_FILE_CONTENT, encoding="utf-8")
 
-        inputs = ["I", "testDG", "/tmp", "4", "xml", "0",
-                  "/does/not/exist.yaml", str(id_file)]
+        inputs = [
+            "I",
+            "testDG",
+            "/tmp",
+            "4",
+            "xml",
+            "0",
+            "/does/not/exist.yaml",
+            str(id_file),
+        ]
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
         assert prm["id_f"] == str(id_file)
@@ -366,6 +559,7 @@ class TestOptionI:
 # ---------------------------------------------------------------------------
 # Option S – Sets anzeigen
 # ---------------------------------------------------------------------------
+
 
 class TestOptionS:
     """

@@ -19,5 +19,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
 
+      - name: Lint with ruff
+        run: uv run ruff check ometha/
+
       - name: Run tests
         run: TERM=dumb uv run pytest tests/ -v

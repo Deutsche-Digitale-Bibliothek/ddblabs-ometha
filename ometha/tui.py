@@ -1,8 +1,10 @@
 import os
 import re
 import sys
+from typing import Any
 from urllib.parse import quote_plus
 
+from requests import Session
 from requests.exceptions import ConnectionError, HTTPError, Timeout
 
 from .cli import parse_set_values
@@ -17,7 +19,19 @@ from .harvester import (
 )
 
 
-def interactiveMode(session):
+def interactiveMode(session: Session) -> dict[str, Any]:
+    """Run the interactive (TUI) mode to collect harvesting parameters from user input.
+
+    Presents a menu for normal harvesting, ID-file harvesting, resumption token
+    continuation, set listing, or exit. Populates and returns the PRM dictionary.
+
+    Args:
+        session: HTTP session used for live API lookups (e.g. listing sets).
+
+    Returns:
+        A populated PRM dictionary with all parameters entered by the user.
+    """
+
     def get_valid_input(prompt, validator, error_message):
         while True:
             user_input = input(prompt).strip()
@@ -32,7 +46,13 @@ def interactiveMode(session):
     def is_valid_url(url):
         return bool(re.search(r"https?://\S+", url))
 
-    how_to_start_input = input("Bitte wählen Sie eine Option:\n\n- [N]ormales Harvesting\n- Harvesting von Records per [I]D-File\n- Harvesten von Identifiern fortsetzen mit einem [R]esumptionToken\n- Anzeige aller auf der Schnittstelle vorhandener [S]ets\n- Programm verlassen mit [E]xit\n => ").strip().upper()
+    how_to_start_input = (
+        input(
+            "Bitte wählen Sie eine Option:\n\n- [N]ormales Harvesting\n- Harvesting von Records per [I]D-File\n- Harvesten von Identifiern fortsetzen mit einem [R]esumptionToken\n- Anzeige aller auf der Schnittstelle vorhandener [S]ets\n- Programm verlassen mit [E]xit\n => "
+        )
+        .strip()
+        .upper()
+    )
 
     # If no input is provided, default to "N"
     how_to_start = how_to_start_input if how_to_start_input else "N"
@@ -40,7 +60,13 @@ def interactiveMode(session):
     # Validate the input
     while how_to_start not in {"N", "I", "R", "S", "E"}:
         print("Ungültige Option!")
-        how_to_start_input = input("Bitte wählen Sie eine Option:\n\n- [N]ormales Harvesting\n- Harvesting von Records per [I]D-File\n- Harvesten von Identifiern fortsetzen mit einem [R]esumptionToken\n- Anzeige aller auf der Schnittstelle vorhandener [S]ets\n- Programm verlassen mit [E]xit\n => ").strip().upper()
+        how_to_start_input = (
+            input(
+                "Bitte wählen Sie eine Option:\n\n- [N]ormales Harvesting\n- Harvesting von Records per [I]D-File\n- Harvesten von Identifiern fortsetzen mit einem [R]esumptionToken\n- Anzeige aller auf der Schnittstelle vorhandener [S]ets\n- Programm verlassen mit [E]xit\n => "
+            )
+            .strip()
+            .upper()
+        )
         how_to_start = how_to_start_input if how_to_start_input else "N"
 
     def add_common_args():
@@ -51,11 +77,14 @@ def interactiveMode(session):
         PRM["n_procs"] = int(
             input("Anzahl an parallelen Downloads (default: 16): ") or 16
         )
-        PRM["exp_type"] = get_valid_input(
-            "Exportformat (xml/json) (default: xml): ",
-            lambda x: x.lower() in {"xml", "json"} or x == "",
-            "Kein korrektes Format!",
-        ) or "xml"
+        PRM["exp_type"] = (
+            get_valid_input(
+                "Exportformat (xml/json) (default: xml): ",
+                lambda x: x.lower() in {"xml", "json"} or x == "",
+                "Kein korrektes Format!",
+            )
+            or "xml"
+        )
         PRM["timeout"] = float(input("Timeout in Sekunden (default: 0): ") or 0)
 
     if how_to_start == "E":
@@ -74,7 +103,9 @@ def interactiveMode(session):
         # if the user doesnt enter anything, set to "all"
         PRM["sets"] = [
             parse_set_values(
-                input("Set(s) kommagetrennt oder (für Schnittmenge mit '/' getrennt, default: keine Eingrenzung): ")
+                input(
+                    "Set(s) kommagetrennt oder (für Schnittmenge mit '/' getrennt, default: keine Eingrenzung): "
+                )
                 or None
             )
         ]
@@ -111,7 +142,17 @@ def interactiveMode(session):
     return PRM
 
 
-def get_sets_mprefs(url, session, sets: dict):
+def get_sets_mprefs(url: str, session: Session, sets: dict[str, str]) -> None:
+    """Fetch and display all OAI sets available at the given ListSets URL.
+
+    Follows resumption tokens across pages to collect all sets, prints them sorted
+    by name, then exits. Also prints available metadata prefixes.
+
+    Args:
+        url: The ListSets URL to query.
+        session: HTTP session to use for requests.
+        sets: Accumulator dict mapping set name to set spec, shared across recursive calls.
+    """
     try:
         response = session.get(url, verify=False, timeout=(20, 80))
         root = isinvalid_xml_content(response, url, mode="ui")

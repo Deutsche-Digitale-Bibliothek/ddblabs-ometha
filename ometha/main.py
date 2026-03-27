@@ -39,7 +39,22 @@ from .helpers import (
 from .tui import interactiveMode
 
 
-def generate_id_harvesting_url(PRM: dict, set: str, session: requests.Session) -> list:
+def generate_id_harvesting_url(
+    PRM: dict, set: str, session: requests.Session
+) -> list[str]:
+    """Build a ListIdentifiers URL from PRM parameters and return all harvested IDs.
+
+    If a resumption token is present in PRM it is used directly; otherwise the URL
+    is assembled from the from/until dates, metadata prefix, and optional set.
+
+    Args:
+        PRM: Parameters dictionary with harvesting configuration.
+        set: OAI set spec to restrict harvesting, or empty string for no set filter.
+        session: HTTP session to use for requests.
+
+    Returns:
+        A list of all OAI identifier strings found at the endpoint.
+    """
     urlpar = {"from": "f_date", "until": "u_date", "metadataPrefix": "pref"}
     base_url = f"{PRM['b_url']}?verb=ListIdentifiers&"
     if PRM["res_tok"]:
@@ -55,9 +70,18 @@ def generate_id_harvesting_url(PRM: dict, set: str, session: requests.Session) -
     return get_identifier(PRM, url, session)
 
 
-def start_process():
+def start_process() -> None:
+    """Initialize and run the full Ometha harvesting pipeline.
+
+    Handles multiprocessing setup, colorama initialization, HTTP session
+    configuration, argument parsing (CLI or interactive), folder/log creation,
+    identifier harvesting, and file harvesting with retry logic.
+    """
     multiprocessing.freeze_support()  # multiprocessing Einstellung
-    if sys.platform == "darwin" and multiprocessing.get_start_method(allow_none=True) is None:
+    if (
+        sys.platform == "darwin"
+        and multiprocessing.get_start_method(allow_none=True) is None
+    ):
         multiprocessing.set_start_method("fork")
     init(autoreset=True)  # Colorama Einstellung:
 
@@ -123,8 +147,10 @@ def start_process():
 
     adapter = HTTPAdapter(
         max_retries=urllib3.util.retry.Retry(
-            total=8, status_forcelist=[429, 500, 502, 503, 504], backoff_factor=3,
-            raise_on_status=False
+            total=8,
+            status_forcelist=[429, 500, 502, 503, 504],
+            backoff_factor=3,
+            raise_on_status=False,
         )
     )
     session = requests.Session()
@@ -197,7 +223,10 @@ def start_process():
         print(f"{FEHLER} {PRM['b_url']} is not accessible. Trying with verb=Identify.")
         try:
             # try baseurl with verb Identify
-            with yaspin(Spinners.dots, text=f"Checking if {PRM['b_url']}?verb=Identify is accessible"):
+            with yaspin(
+                Spinners.dots,
+                text=f"Checking if {PRM['b_url']}?verb=Identify is accessible",
+            ):
                 session.get(
                     PRM["b_url"] + "?verb=Identify", verify=False, timeout=(20, 80)
                 )
@@ -225,7 +254,9 @@ def start_process():
         if PRM["sets"]:  # Check if sets is not empty
             # Initialize lists for comma and slash sets
             # Extract the first dictionary from the sets list
-            sets_dict = PRM["sets"][0] if PRM["sets"] else {"additive": [], "intersection": []}
+            sets_dict = (
+                PRM["sets"][0] if PRM["sets"] else {"additive": [], "intersection": []}
+            )
             a_sets = sets_dict.get("additive", [])
             i_sets = sets_dict.get("intersection", [])
 
@@ -233,7 +264,7 @@ def start_process():
             if not a_sets and not i_sets:
                 ids = generate_id_harvesting_url(PRM, set=None, session=session)
             else:
-            # Initialize lists for comma and slash ids
+                # Initialize lists for comma and slash ids
                 a_ids = [
                     id
                     for a_set in a_sets

@@ -2,6 +2,7 @@ import argparse
 import os
 import re
 import time
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from ._version import __version__
@@ -9,9 +10,15 @@ from .harvester import read_yaml_file
 from .helpers import ISODATEREGEX, PRM, SEP_LINE, TIMESTR
 
 
-def parseargs() -> dict:
-    """Parse command line arguments.
-    returns: dict
+def parseargs() -> dict[str, Any]:
+    """Parse command-line arguments and return a populated PRM dictionary.
+
+    Supports four subcommands: ``default`` (full ListIdentifiers/GetRecord flow),
+    ``conf`` (YAML config file), ``auto`` (full URL with embedded parameters), and
+    ``ids`` (harvest from a pre-built ID file).
+
+    Returns:
+        A PRM dictionary with all harvesting parameters populated from CLI arguments.
     """
 
     def add_common_args(s):
@@ -243,17 +250,33 @@ def parseargs() -> dict:
     return PRM
 
 
-def parse_set_values(value):
+def parse_set_values(value: str | None) -> dict[str, list[str]]:
+    """Parse a set specification string into additive and intersection components.
+
+    A ``/`` separator splits additive sets (left) from intersection sets (right);
+    ``,`` separates individual set names within each part. A plain value without
+    separators is placed in ``"additive"``.
+
+    Args:
+        value: Set specification string, or ``None`` for an empty result.
+
+    Returns:
+        A dict with ``"additive"`` and ``"intersection"`` keys, each a list of set names.
+    """
     if value is not None:
         sets = {"additive": [], "intersection": []}
         if "/" in value:
             slash_parts = value.split("/")
             sets["additive"].extend(item.strip() for item in slash_parts[0].split(","))
-            sets["intersection"].extend(item.strip() for item in slash_parts[1].split(","))
+            sets["intersection"].extend(
+                item.strip() for item in slash_parts[1].split(",")
+            )
         elif "," in value:
             sets["additive"].extend(item.strip() for item in value.split(","))
         else:
-            sets["additive"].append(value.strip())  # If no separator is found, assume comma
+            sets["additive"].append(
+                value.strip()
+            )  # If no separator is found, assume comma
     else:
         sets = {"additive": [], "intersection": []}
     return sets

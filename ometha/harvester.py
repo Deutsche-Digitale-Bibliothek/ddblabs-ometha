@@ -4,8 +4,10 @@ import re
 import sys
 import time
 from collections import defaultdict
+from collections.abc import Callable
 from functools import partial
 from multiprocessing.dummy import Pool as ThreadPool
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import xmltodict
@@ -13,6 +15,7 @@ import yaml
 from yaspin import yaspin
 from yaspin.spinners import Spinners
 from loguru import logger
+from requests import Session
 from requests.exceptions import (
     RequestException,
 )
@@ -35,13 +38,25 @@ from .helpers import (
 
 
 # restliche Funktionen
-def get_identifier(PRM: dict, url: str, session, on_list_size=None) -> list:
-    """
+def get_identifier(
+    PRM: dict[str, Any],
+    url: str,
+    session: Session,
+    on_list_size: Callable[[int], None] | None = None,
+) -> list[str]:
+    """Harvest all identifiers from a ListIdentifiers OAI-PMH endpoint.
 
-    :param PRM: dict of a
-    :param url:
-    :param session:
-    :return: a list of all extracted identifiers
+    Iterates through all pages using resumption tokens, saves checkpoint tokens
+    periodically, and retries on transient failures with exponential backoff.
+
+    Args:
+        PRM: Parameters dictionary with harvesting configuration.
+        url: Initial ListIdentifiers URL.
+        session: HTTP session to use for requests.
+        on_list_size: Optional callback invoked with the total list size once known.
+
+    Returns:
+        A list of all harvested OAI identifier strings.
     """
     spinner = yaspin(Spinners.dots)
     spinner.start()
@@ -64,10 +79,14 @@ def get_identifier(PRM: dict, url: str, session, on_list_size=None) -> list:
                 if retry_count >= max_retries:
                     # Save the last resumption token before exiting
                     if last_token:
-                        token_file = os.path.join(PRM.get("out_f", "."), f"resumption_token_{TIMESTR}.txt")
+                        token_file = os.path.join(
+                            PRM.get("out_f", "."), f"resumption_token_{TIMESTR}.txt"
+                        )
                         try:
                             with open(token_file, "w") as f:
-                                f.write(f"Resume with: --resumptiontoken {last_token}\n")
+                                f.write(
+                                    f"Resume with: --resumptiontoken {last_token}\n"
+                                )
                                 f.write(f"Last successful count: {len(id_list)} IDs\n")
                                 f.write(f"Token: {last_token}\n")
                             print(f"\n{INFO}Resumption token saved to: {token_file}")
@@ -77,9 +96,15 @@ def get_identifier(PRM: dict, url: str, session, on_list_size=None) -> list:
                     spinner.stop()
                     handle_error(e, PRM["mode"], url)
                 else:
-                    wait_time = 10 * (2 ** retry_count)  # Exponential backoff: 20s, 40s, 80s
-                    print(f"\n{ACHTUNG}Retry {retry_count}/{max_retries} after {wait_time}s due to error...")
-                    logger.warning(f"Retrying after {wait_time}s (attempt {retry_count}/{max_retries})")
+                    wait_time = 10 * (
+                        2**retry_count
+                    )  # Exponential backoff: 20s, 40s, 80s
+                    print(
+                        f"\n{ACHTUNG}Retry {retry_count}/{max_retries} after {wait_time}s due to error..."
+                    )
+                    logger.warning(
+                        f"Retrying after {wait_time}s (attempt {retry_count}/{max_retries})"
+                    )
                     time.sleep(wait_time)
                     continue
 
@@ -109,7 +134,9 @@ def get_identifier(PRM: dict, url: str, session, on_list_size=None) -> list:
 
         # Periodically save resumption token for recovery
         if token and len(id_list) % token_save_interval == 0:
-            token_file = os.path.join(PRM.get("out_f", "."), "resumption_token_latest.txt")
+            token_file = os.path.join(
+                PRM.get("out_f", "."), "resumption_token_latest.txt"
+            )
             try:
                 with open(token_file, "w") as f:
                     f.write(f"Resume with: --resumptiontoken {token}\n")
@@ -117,14 +144,18 @@ def get_identifier(PRM: dict, url: str, session, on_list_size=None) -> list:
                     f.write(f"Token: {token}\n")
                 logger.info(f"Saved checkpoint at {len(id_list)} IDs")
             except Exception as save_err:
-                logger.warning(f"Could not save resumption token checkpoint: {save_err}")
+                logger.warning(
+                    f"Could not save resumption token checkpoint: {save_err}"
+                )
 
         # URL für nächste Suche zusammenbauen, wenn kein Token (== letzte Seite) loop beenden
         if not token:
             break
         url = f"{PRM['b_url']}?verb=ListIdentifiers&resumptionToken={token}"
 
-    spinner.text = f"Identifier Harvesting beendet. Insgesamt {len(id_list)} IDs bekommen."
+    spinner.text = (
+        f"Identifier Harvesting beendet. Insgesamt {len(id_list)} IDs bekommen."
+    )
     spinner.ok("✓")
     logger.info(f"Letzte abgefragte URL: {PRM['b_url']}")
     logger.info("Identifier Harvesting beendet.")
@@ -132,7 +163,9 @@ def get_identifier(PRM: dict, url: str, session, on_list_size=None) -> list:
     return id_list
 
 
-def harvest_files(ids, PRM, folder, session) -> tuple[list, list]:
+def harvest_files(
+    ids: list[str], PRM: dict[str, Any], folder: str, session: Session
+) -> tuple[list[str], list[str]]:
     """
     Liest ID Liste und lädt die IDs einzeln über GetRecord.
     :param ids: List of IDs
@@ -141,9 +174,11 @@ def harvest_files(ids, PRM, folder, session) -> tuple[list, list]:
     :return: tuple with failed_download, failed_ids ID-Lists
     """
 
-    def save_file(oai_id: str, folder: str, response, export_type):
-        """
-        Is called by get_response_text_from_url and saves the response to a file.
+    def save_file(oai_id: str, folder: str, response: str, export_type: str) -> None:
+        """Save an OAI record response to a file in the given folder.
+
+        The filename is derived from the OAI identifier with special characters replaced.
+        Saves as XML or JSON depending on export_type; falls back to XML for unknown types.
         """
         filename = re.sub(r"([:.|&%$=()\"#+\'´`*~<>!?/;,\[\]]|\s)", "_", oai_id)
         if export_type == "xml":
@@ -168,7 +203,9 @@ def harvest_files(ids, PRM, folder, session) -> tuple[list, list]:
             ) as of:
                 of.write(response)
 
-    def get_response_text_from_url(url: str, session, folder: str, export_type: str):
+    def get_response_text_from_url(
+        url: str, session: Session, folder: str, export_type: str
+    ) -> dict[str, str] | None:
         """
         Downloads the content from the given URL and saves it to a file.
 
@@ -265,7 +302,9 @@ def change_date(date: str, name: str, key: str) -> None:
             yaml.safe_dump(doc, f, default_flow_style=False, sort_keys=False)
 
 
-def create_id_file(PRM: dict, ids: list, folder: str, type=None) -> str:
+def create_id_file(
+    PRM: dict[str, Any], ids: list[str], folder: str, type: str | None = None
+) -> str:
     """
     Create an ID file with the given parameters.
 
@@ -288,7 +327,7 @@ def create_id_file(PRM: dict, ids: list, folder: str, type=None) -> str:
     return file
 
 
-def read_yaml_file(file_path: str, keys: list, default: any = None) -> list:
+def read_yaml_file(file_path: str, keys: list[str], default: Any = None) -> list[Any]:
     """Reads a yaml file and returns the values for the given keys.
 
     Args:

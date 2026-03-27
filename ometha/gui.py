@@ -34,7 +34,9 @@ def _build_session() -> requests.Session:
 
 
 def _fetch_metadata_formats(b_url: str, session) -> list[str]:
-    resp = session.get(f"{b_url}?verb=ListMetadataFormats", verify=False, timeout=(10, 30))
+    resp = session.get(
+        f"{b_url}?verb=ListMetadataFormats", verify=False, timeout=(10, 30)
+    )
     root = etree.XML(resp.content)
     return [el.text for el in root.findall(f".//{NAMESPACE}metadataPrefix") if el.text]
 
@@ -61,7 +63,6 @@ def _fetch_sets(b_url: str, session) -> dict[str, str]:
 @ui.page("/")
 def index():
     with ui.column().classes("w-full max-w-2xl mx-auto p-6 gap-4"):
-
         # Header
         with ui.row().classes("items-baseline gap-3"):
             ui.label("Ometha").classes("text-3xl font-bold")
@@ -71,8 +72,15 @@ def index():
         with ui.card().classes("w-full"):
             ui.label("Pflichtfelder").classes("font-semibold mb-2")
             with ui.row().classes("w-full gap-2 items-end"):
-                b_url = ui.input("Base-URL", placeholder="https://oai.deutsche-digitale-bibliothek.de").classes("flex-1")
-                fetch_btn = ui.button(icon="travel_explore").props("flat dense").tooltip("Sets & Formate laden")
+                b_url = ui.input(
+                    "Base-URL",
+                    placeholder="https://oai.deutsche-digitale-bibliothek.de",
+                ).classes("flex-1")
+                fetch_btn = (
+                    ui.button(icon="travel_explore")
+                    .props("flat dense")
+                    .tooltip("Sets & Formate laden")
+                )
             fetch_status = ui.label("").classes("text-xs text-gray-400 -mt-2")
             pref = ui.select(
                 options=[],
@@ -84,7 +92,9 @@ def index():
         # Optionale Felder
         with ui.card().classes("w-full"):
             ui.label("Optionale Felder").classes("font-semibold mb-2")
-            dat_geb = ui.input("Datengeber (Ordnername)", placeholder=TIMESTR).classes("w-full")
+            dat_geb = ui.input("Datengeber (Ordnername)", placeholder=TIMESTR).classes(
+                "w-full"
+            )
             with ui.row().classes("w-full gap-2 items-end"):
                 out_f = ui.input(
                     "Ausgabeordner",
@@ -93,43 +103,62 @@ def index():
                 ui.button(icon="folder_open").props("flat dense").on(
                     "click", lambda: pick_folder()
                 )
-            sets_select = ui.select(
-                options={},
-                label="Set(s)",
-                multiple=True,
-                with_input=True,
-            ).props("use-chips outlined").classes("w-full")
+            sets_select = (
+                ui.select(
+                    options={},
+                    label="Set(s)",
+                    multiple=True,
+                    with_input=True,
+                )
+                .props("use-chips outlined")
+                .classes("w-full")
+            )
             with ui.row().classes("w-full gap-4"):
-                with ui.input("Von-Datum (YYYY-MM-DD)", placeholder="YYYY-MM-DD").classes("flex-1") as f_date:
+                with ui.input(
+                    "Von-Datum (YYYY-MM-DD)", placeholder="YYYY-MM-DD"
+                ).classes("flex-1") as f_date:
                     with f_date.add_slot("append"):
-                        ui.icon("event").classes("cursor-pointer").on("click", lambda: f_date_menu.open())
+                        ui.icon("event").classes("cursor-pointer").on(
+                            "click", lambda: f_date_menu.open()
+                        )
                     with ui.menu() as f_date_menu:
                         ui.date(mask="YYYY-MM-DD").bind_value(f_date)
-                with ui.input("Bis-Datum (YYYY-MM-DD)", placeholder="YYYY-MM-DD").classes("flex-1") as u_date:
+                with ui.input(
+                    "Bis-Datum (YYYY-MM-DD)", placeholder="YYYY-MM-DD"
+                ).classes("flex-1") as u_date:
                     with u_date.add_slot("append"):
-                        ui.icon("event").classes("cursor-pointer").on("click", lambda: u_date_menu.open())
+                        ui.icon("event").classes("cursor-pointer").on(
+                            "click", lambda: u_date_menu.open()
+                        )
                     with ui.menu() as u_date_menu:
                         ui.date(mask="YYYY-MM-DD").bind_value(u_date)
             with ui.row().classes("w-full gap-4"):
-                n_procs = ui.number("Parallele Downloads", value=4, min=1, max=100).classes("flex-1")
+                n_procs = ui.number(
+                    "Parallele Downloads", value=4, min=1, max=100
+                ).classes("flex-1")
                 timeout = ui.number("Timeout (s)", value=0, min=0).classes("flex-1")
-            exp_type = ui.select(["xml", "json"], value="xml", label="Exportformat").classes("w-full")
+            exp_type = ui.select(
+                ["xml", "json"], value="xml", label="Exportformat"
+            ).classes("w-full")
 
         # Fehleranzeige
         error_banner = ui.label("").classes("text-red-600 font-medium hidden")
 
         # Aktionszeile
         with ui.row().classes("items-center gap-4"):
-            start_btn = ui.button("Harvesting starten", icon="play_arrow").classes("bg-green-600 text-white")
+            start_btn = ui.button("Harvesting starten", icon="play_arrow").classes(
+                "bg-green-600 text-white"
+            )
             spinner = ui.spinner(size="lg").classes("hidden")
             status_label = ui.label("").classes("text-gray-500 text-sm flex-1")
+
             async def quit_app():
                 with ui.dialog() as confirm_dialog, ui.card():
                     ui.label("Ometha wirklich beenden?").classes("font-semibold")
                     with ui.row().classes("gap-2 mt-2"):
-                        ui.button("Ja, beenden", icon="power_settings_new").classes("bg-red-600 text-white").on(
-                            "click", lambda: confirm_dialog.submit("yes")
-                        )
+                        ui.button("Ja, beenden", icon="power_settings_new").classes(
+                            "bg-red-600 text-white"
+                        ).on("click", lambda: confirm_dialog.submit("yes"))
                         ui.button("Abbrechen").props("flat").on(
                             "click", lambda: confirm_dialog.submit("no")
                         )
@@ -138,12 +167,14 @@ def index():
                     await ui.run_javascript("window.close()")
                     app.shutdown()
 
-            ui.button("Beenden", icon="power_settings_new").props("flat").classes("text-red-500").on(
-                "click", quit_app
-            )
+            ui.button("Beenden", icon="power_settings_new").props("flat").classes(
+                "text-red-500"
+            ).on("click", quit_app)
 
         # Log-Ausgabe
-        log_area = ui.log(max_lines=500).classes("w-full h-64 font-mono text-sm border rounded")
+        log_area = ui.log(max_lines=500).classes(
+            "w-full h-64 font-mono text-sm border rounded"
+        )
 
     # ---------------------------------------------------------------------------
 
@@ -187,7 +218,8 @@ def index():
             if sys.platform == "darwin":
                 proc = subprocess.run(
                     [
-                        "osascript", "-e",
+                        "osascript",
+                        "-e",
                         'POSIX path of (choose folder with prompt "Ausgabeordner wählen")',
                     ],
                     capture_output=True,
@@ -224,23 +256,23 @@ def index():
 
         # PRM aufbauen
         prm = {
-            "b_url":     b_url.value.strip().rstrip("/"),
-            "pref":      pref.value if isinstance(pref.value, str) else str(pref.value),
-            "dat_geb":   dat_geb.value.strip() or TIMESTR,
-            "out_f":     out_f.value.strip() or str(Path.home() / "Downloads"),
-            "sets":      [{"additive": selected_sets, "intersection": []}],
-            "f_date":    f_date.value.strip() or None,
-            "u_date":    u_date.value.strip() or None,
-            "n_procs":   int(n_procs.value or 16),
-            "timeout":   float(timeout.value or 0),
-            "exp_type":  exp_type.value,
-            "debug":     False,
-            "res_tok":   None,
-            "id_f":      None,
-            "conf_f":    None,
-            "conf_m":    False,
-            "auto_m":    False,
-            "mode":      "cli",
+            "b_url": b_url.value.strip().rstrip("/"),
+            "pref": pref.value if isinstance(pref.value, str) else str(pref.value),
+            "dat_geb": dat_geb.value.strip() or TIMESTR,
+            "out_f": out_f.value.strip() or str(Path.home() / "Downloads"),
+            "sets": [{"additive": selected_sets, "intersection": []}],
+            "f_date": f_date.value.strip() or None,
+            "u_date": u_date.value.strip() or None,
+            "n_procs": int(n_procs.value or 16),
+            "timeout": float(timeout.value or 0),
+            "exp_type": exp_type.value,
+            "debug": False,
+            "res_tok": None,
+            "id_f": None,
+            "conf_f": None,
+            "conf_m": False,
+            "auto_m": False,
+            "mode": "cli",
         }
 
         # Ausgabeordner anlegen
@@ -257,7 +289,9 @@ def index():
         try:
             # Phase 1: Identifier sammeln
             log("Sammle Identifier …")
-            harvest_url = f"{prm['b_url']}?verb=ListIdentifiers&metadataPrefix={prm['pref']}"
+            harvest_url = (
+                f"{prm['b_url']}?verb=ListIdentifiers&metadataPrefix={prm['pref']}"
+            )
             if prm["f_date"]:
                 harvest_url += f"&from={prm['f_date']}"
             if prm["u_date"]:
@@ -268,12 +302,16 @@ def index():
             def on_list_size(n: int):
                 log(f"Angegebene ListSize: {n}")
 
-            ids = await run.io_bound(get_identifier, prm, harvest_url, session, on_list_size)
+            ids = await run.io_bound(
+                get_identifier, prm, harvest_url, session, on_list_size
+            )
             log(f"{len(ids)} Identifier gefunden.")
 
             # Phase 2: Dateien herunterladen
             log("Starte Datei-Harvesting …")
-            failed_dl, failed_ids = await run.io_bound(harvest_files, ids, prm, folder, session)
+            failed_dl, failed_ids = await run.io_bound(
+                harvest_files, ids, prm, folder, session
+            )
 
             # Ergebnis
             n_ok = len(ids) - len(failed_dl) - len(failed_ids)

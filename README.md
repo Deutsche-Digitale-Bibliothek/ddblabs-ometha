@@ -81,6 +81,45 @@ Die Sonderfunktion "Anzeige aller auf der Schnittstelle vorgandener Sets" parst 
 
 ![Info Modus](assets/infomode.png)
 
+# GUI Modus
+
+Ometha enthält einen grafischen Modus auf Basis von [NiceGUI](https://nicegui.io/), der im Browser läuft und keine Kommandozeile erfordert.
+
+## Starten
+
+```bash
+ometha-gui
+```
+
+Der Browser öffnet sich automatisch unter `http://localhost:8765`.
+
+## Bedienung
+
+### Pflichtfelder
+
+| Feld | Beschreibung |
+|------|-------------|
+| **Base-URL** | URL der OAI-PMH-Schnittstelle |
+| **Metadata Prefix** | Metadaten-Format (z. B. `oai_dc`, `mets`, `ddb`) |
+
+Nach dem Verlassen des Base-URL-Felds (oder per Klick auf den Globus-Button neben dem Feld) lädt Ometha automatisch die verfügbaren Metadata-Prefixe und Sets von der Schnittstelle und befüllt die entsprechenden Felder.
+
+### Optionale Felder
+
+| Feld | Beschreibung |
+|------|-------------|
+| **Datengeber** | Name des Ausgabeordners (Standard: Zeitstempel) |
+| **Ausgabeordner** | Zielverzeichnis; über den Ordner-Button kann ein Dialog geöffnet werden |
+| **Set(s)** | Ein oder mehrere Sets (Mehrfachauswahl möglich) |
+| **Von-Datum / Bis-Datum** | ISO8601-Zeitraum (YYYY-MM-DD); über das Kalender-Icon auswählbar |
+| **Parallele Downloads** | Anzahl gleichzeitiger `GetRecord`-Anfragen (Standard: 4) |
+| **Timeout (s)** | Wartezeit zwischen Anfragen in Sekunden (Standard: 0) |
+| **Exportformat** | `xml` oder `json` |
+
+### Harvesting starten
+
+Ein Klick auf **„Harvesting starten"** führt den zweistufigen Prozess aus (zuerst alle Identifier per `ListIdentifiers` sammeln, dann jede Datei per `GetRecord` herunterladen) und gibt den Fortschritt im Log-Bereich aus. Über **„Beenden"** wird die Anwendung nach einer Bestätigungsabfrage beendet.
+
 # Aufruf über die Kommandozeile (CLI Modus)
 
 **Information:** Es können sowohl die ausführbare Datei als auch das Python-Script ausgeführt werden, zunächst muss aber in der Kommandozeile per `cd` Befehl in den Ordner gewechselt werden, in dem die Datei liegt (es sei denn, die Ausführbare Datei ist im PATH, also unter Linux bspw. in `/usr/bin`). Dann beginnt der Aufruf entweder mit `Ometha.exe` (Windows) oder mit `python Ometha.py` (Python Aufruf) bzw. mit `Ometha` (Unix). In den folgenden Beispielen muss also der Beginn ggf. ausgetauscht werden.

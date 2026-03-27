@@ -47,3 +47,10 @@ dev = [
     "requests-mock>=1.12.1",
     "ruff>=0.15.8",
 ]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

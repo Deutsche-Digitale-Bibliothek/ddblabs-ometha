@@ -30,6 +30,7 @@ BASE_URL = "http://mock-oai.test/oai"
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def session():
     """Minimale requests.Session ohne Retry-Dekorierung (für Unit-Tests)."""
@@ -64,6 +65,7 @@ def prm_base():
 # Identify
 # ---------------------------------------------------------------------------
 
+
 class TestIdentify:
     def test_identify_returns_valid_xml(self, requests_mock):
         mock = OAIMock.with_dc_records(5)
@@ -86,6 +88,7 @@ class TestIdentify:
 # ListMetadataFormats
 # ---------------------------------------------------------------------------
 
+
 class TestListMetadataFormats:
     def test_default_formats(self, requests_mock):
         mock = OAIMock.with_dc_records(3)
@@ -107,6 +110,7 @@ class TestListMetadataFormats:
 # ListSets
 # ---------------------------------------------------------------------------
 
+
 class TestListSets:
     def test_sets_returned(self, requests_mock):
         mock = OAIMock(sets={"ddc:500": "Naturwissenschaften", "ddc:600": "Technik"})
@@ -127,6 +131,7 @@ class TestListSets:
 # ---------------------------------------------------------------------------
 # ListIdentifiers via get_identifier()
 # ---------------------------------------------------------------------------
+
 
 class TestListIdentifiers:
     def test_all_ids_returned(self, requests_mock, session, prm_base):
@@ -201,13 +206,16 @@ class TestListIdentifiers:
 # GetRecord
 # ---------------------------------------------------------------------------
 
+
 class TestGetRecord:
     def test_get_existing_record(self, requests_mock):
         records = [OAIRecord("oai:mock:001", datestamp="2024-01-01T00:00:00Z")]
         mock = OAIMock(records=records)
         mock.register(requests_mock)
 
-        resp = requests.get(f"{BASE_URL}?verb=GetRecord&metadataPrefix=oai_dc&identifier=oai:mock:001")
+        resp = requests.get(
+            f"{BASE_URL}?verb=GetRecord&metadataPrefix=oai_dc&identifier=oai:mock:001"
+        )
         assert resp.status_code == 200
         assert "<GetRecord>" in resp.text
         assert "oai:mock:001" in resp.text
@@ -216,7 +224,9 @@ class TestGetRecord:
         mock = OAIMock(records=[])
         mock.register(requests_mock)
 
-        resp = requests.get(f"{BASE_URL}?verb=GetRecord&metadataPrefix=oai_dc&identifier=oai:does:not:exist")
+        resp = requests.get(
+            f"{BASE_URL}?verb=GetRecord&metadataPrefix=oai_dc&identifier=oai:does:not:exist"
+        )
         assert 'code="idDoesNotExist"' in resp.text
 
     def test_get_record_missing_args(self, requests_mock):
@@ -231,7 +241,9 @@ class TestGetRecord:
         mock = OAIMock(records=records)
         mock.register(requests_mock)
 
-        resp = requests.get(f"{BASE_URL}?verb=GetRecord&metadataPrefix=oai_dc&identifier=oai:mock:deleted")
+        resp = requests.get(
+            f"{BASE_URL}?verb=GetRecord&metadataPrefix=oai_dc&identifier=oai:mock:deleted"
+        )
         assert 'status="deleted"' in resp.text
         # Deleted records haben kein <metadata>
         assert "<metadata>" not in resp.text
@@ -240,6 +252,7 @@ class TestGetRecord:
 # ---------------------------------------------------------------------------
 # ListRecords (XML-Struktur)
 # ---------------------------------------------------------------------------
+
 
 class TestListRecords:
     def test_list_records_contains_metadata(self, requests_mock):
@@ -277,6 +290,7 @@ class TestListRecords:
 # Fehlerbehandlung
 # ---------------------------------------------------------------------------
 
+
 class TestErrors:
     def test_bad_verb(self, requests_mock):
         mock = OAIMock()
@@ -296,13 +310,16 @@ class TestErrors:
         mock = OAIMock()
         mock.register(requests_mock)
 
-        resp = requests.get(f"{BASE_URL}?verb=ListIdentifiers&resumptionToken=invalidtoken999")
+        resp = requests.get(
+            f"{BASE_URL}?verb=ListIdentifiers&resumptionToken=invalidtoken999"
+        )
         assert 'code="badResumptionToken"' in resp.text
 
 
 # ---------------------------------------------------------------------------
 # isinvalid_xml_content Kompatibilität (Ometha-intern)
 # ---------------------------------------------------------------------------
+
 
 class TestOmethaXmlParsing:
     def test_identify_parseable_by_ometha(self, requests_mock, prm_base):
@@ -338,6 +355,7 @@ class TestOmethaXmlParsing:
 # ---------------------------------------------------------------------------
 # TestListIdentifiers – get_identifier() Integration
 # ---------------------------------------------------------------------------
+
 
 class TestGetIdentifierIntegration:
     """
@@ -411,6 +429,7 @@ class TestGetIdentifierIntegration:
 # Test503Retry – Retry-after Simulation
 # ---------------------------------------------------------------------------
 
+
 class Test503Retry:
     """
     Simuliert einen 503-Fehler beim ersten Request.
@@ -446,7 +465,9 @@ class Test503Retry:
         mock = OAIMock.with_dc_records(3, simulate_503=True)
         mock.register(requests_mock)
 
-        statuses = [requests.get(f"{BASE_URL}?verb=Identify").status_code for _ in range(4)]
+        statuses = [
+            requests.get(f"{BASE_URL}?verb=Identify").status_code for _ in range(4)
+        ]
         assert statuses[0] == 503
         assert all(s == 200 for s in statuses[1:])
 
@@ -463,6 +484,7 @@ class Test503Retry:
 # TestHarvestFiles – harvest_files() Integration
 # ---------------------------------------------------------------------------
 
+
 class TestHarvestFiles:
     """
     Testet harvest_files() aus ometha.harvester gegen den Mock.
@@ -477,14 +499,18 @@ class TestHarvestFiles:
         mock.register(requests_mock)
 
         ids = [r.identifier for r in records]
-        failed_dl, failed_ids = harvest_files(ids, prm_base, str(tmp_path), session=requests.Session())
+        failed_dl, failed_ids = harvest_files(
+            ids, prm_base, str(tmp_path), session=requests.Session()
+        )
 
         xml_files = list(tmp_path.glob("*.xml"))
         assert len(xml_files) == 5
         assert failed_dl == []
         assert failed_ids == []
 
-    def test_nonexistent_id_goes_to_failed_download(self, requests_mock, prm_base, tmp_path):
+    def test_nonexistent_id_goes_to_failed_download(
+        self, requests_mock, prm_base, tmp_path
+    ):
         from ometha.harvester import harvest_files
 
         records = [OAIRecord("oai:mock:exists")]
@@ -492,7 +518,9 @@ class TestHarvestFiles:
         mock.register(requests_mock)
 
         ids = ["oai:mock:exists", "oai:mock:doesnotexist"]
-        failed_dl, failed_ids = harvest_files(ids, prm_base, str(tmp_path), session=requests.Session())
+        failed_dl, failed_ids = harvest_files(
+            ids, prm_base, str(tmp_path), session=requests.Session()
+        )
 
         xml_files = list(tmp_path.glob("*.xml"))
         assert len(xml_files) == 1
@@ -506,12 +534,16 @@ class TestHarvestFiles:
         mock.register(requests_mock)
 
         prm_json = {**prm_base, "exp_type": "json"}
-        harvest_files(["oai:mock:json001"], prm_json, str(tmp_path), session=requests.Session())
+        harvest_files(
+            ["oai:mock:json001"], prm_json, str(tmp_path), session=requests.Session()
+        )
 
         json_files = list(tmp_path.glob("*.json"))
         assert len(json_files) == 1
 
-    def test_deleted_record_goes_to_failed_download(self, requests_mock, prm_base, tmp_path):
+    def test_deleted_record_goes_to_failed_download(
+        self, requests_mock, prm_base, tmp_path
+    ):
         from ometha.harvester import harvest_files
 
         records = [OAIRecord("oai:mock:deleted", deleted=True)]
@@ -532,6 +564,7 @@ class TestHarvestFiles:
 # TestDatefilterEdgeCases
 # ---------------------------------------------------------------------------
 
+
 class TestDatefilterEdgeCases:
     def test_exact_from_boundary_included(self, requests_mock):
         """Ein Record mit datestamp == from-Datum soll enthalten sein."""
@@ -539,7 +572,9 @@ class TestDatefilterEdgeCases:
         mock = OAIMock(records=records)
         mock.register(requests_mock)
 
-        resp = requests.get(f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc&from=2024-03-15")
+        resp = requests.get(
+            f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc&from=2024-03-15"
+        )
         assert "oai:mock:boundary" in resp.text
 
     def test_exact_until_boundary_included(self, requests_mock):
@@ -547,7 +582,9 @@ class TestDatefilterEdgeCases:
         mock = OAIMock(records=records)
         mock.register(requests_mock)
 
-        resp = requests.get(f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc&until=2024-03-15")
+        resp = requests.get(
+            f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc&until=2024-03-15"
+        )
         assert "oai:mock:boundary" in resp.text
 
     def test_from_after_all_records_returns_no_match(self, requests_mock):
@@ -555,7 +592,9 @@ class TestDatefilterEdgeCases:
         mock = OAIMock(records=records)
         mock.register(requests_mock)
 
-        resp = requests.get(f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc&from=2025-01-01")
+        resp = requests.get(
+            f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc&from=2025-01-01"
+        )
         assert 'code="noRecordsMatch"' in resp.text
 
     def test_until_before_all_records_returns_no_match(self, requests_mock):
@@ -563,14 +602,16 @@ class TestDatefilterEdgeCases:
         mock = OAIMock(records=records)
         mock.register(requests_mock)
 
-        resp = requests.get(f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc&until=2019-12-31")
+        resp = requests.get(
+            f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc&until=2019-12-31"
+        )
         assert 'code="noRecordsMatch"' in resp.text
 
     def test_from_and_until_range(self, requests_mock):
         records = [
             OAIRecord("oai:mock:before", datestamp="2022-01-01T00:00:00Z"),
             OAIRecord("oai:mock:inside", datestamp="2023-06-01T00:00:00Z"),
-            OAIRecord("oai:mock:after",  datestamp="2025-01-01T00:00:00Z"),
+            OAIRecord("oai:mock:after", datestamp="2025-01-01T00:00:00Z"),
         ]
         mock = OAIMock(records=records)
         mock.register(requests_mock)
@@ -592,7 +633,9 @@ class TestDatefilterEdgeCases:
         mock = OAIMock(records=records)
         mock.register(requests_mock)
 
-        resp = requests.get(f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc&from=2024-05-01")
+        resp = requests.get(
+            f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc&from=2024-05-01"
+        )
         assert "oai:mock:dateonly" in resp.text
         assert "oai:mock:datetime" in resp.text
 
@@ -600,6 +643,7 @@ class TestDatefilterEdgeCases:
 # ---------------------------------------------------------------------------
 # TestTimeoutHandling – langsame / nicht erreichbare Schnittstellen
 # ---------------------------------------------------------------------------
+
 
 class TestTimeoutHandling:
     """
@@ -668,9 +712,7 @@ class TestTimeoutHandling:
         assert "oai:mock:connfail" in failed_ids
         assert "oai:mock:ok" not in failed_ids
 
-    def test_alle_ids_timeout_keine_dateien(
-        self, requests_mock, prm_base, tmp_path
-    ):
+    def test_alle_ids_timeout_keine_dateien(self, requests_mock, prm_base, tmp_path):
         """Alle GetRecord-Requests schlagen fehl → keine Dateien, alle in failed_ids."""
         from ometha.harvester import harvest_files
 
@@ -691,9 +733,7 @@ class TestTimeoutHandling:
         assert len(failed_ids) == 3
         assert len(list(tmp_path.glob("*.xml"))) == 0
 
-    def test_http_500_geht_in_failed_download(
-        self, requests_mock, prm_base, tmp_path
-    ):
+    def test_http_500_geht_in_failed_download(self, requests_mock, prm_base, tmp_path):
         """HTTP 500 bei GetRecord → ID landet in failed_download (nicht failed_ids)."""
         from ometha.harvester import harvest_files
 
