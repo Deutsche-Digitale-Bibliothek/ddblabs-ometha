@@ -17,3 +17,4 @@ build/
 Pipfile.lock
 *.xml
 *.json
+resumption_token_latest.txt

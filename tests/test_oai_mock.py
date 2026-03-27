@@ -595,3 +595,222 @@ class TestDatefilterEdgeCases:
         resp = requests.get(f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc&from=2024-05-01")
         assert "oai:mock:dateonly" in resp.text
         assert "oai:mock:datetime" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# TestTimeoutHandling – langsame / nicht erreichbare Schnittstellen
+# ---------------------------------------------------------------------------
+
+class TestTimeoutHandling:
+    """
+    Testet das Verhalten bei Netzwerkproblemen.
+
+    Technik:
+    - requests_mock mit exc=... simuliert Fehler ohne echtes Warten
+    - time.sleep wird gemockt, damit der Exponential-Backoff in
+      get_identifier() die Tests nicht verlangsamt (sonst 20s + 40s + 80s)
+    """
+
+    # ------------------------------------------------------------------
+    # harvest_files(): einzelne IDs mit Netzwerkproblemen
+    # ------------------------------------------------------------------
+
+    def test_timeout_bei_einzelner_id_geht_in_failed_ids(
+        self, requests_mock, prm_base, tmp_path
+    ):
+        """Timeout bei GetRecord → ID landet in failed_ids, kein Absturz."""
+        from ometha.harvester import harvest_files
+
+        # Eine normale ID + eine, bei der der Mock Timeout wirft
+        records = [OAIRecord("oai:mock:ok")]
+        mock = OAIMock(records=records)
+        mock.register(requests_mock)
+
+        requests_mock.get(
+            f"{BASE_URL}?verb=GetRecord&metadataPrefix=oai_dc&identifier=oai:mock:timeout",
+            exc=requests.exceptions.Timeout,
+        )
+
+        failed_dl, failed_ids = harvest_files(
+            ["oai:mock:ok", "oai:mock:timeout"],
+            prm_base,
+            str(tmp_path),
+            session=requests.Session(),
+        )
+
+        assert "oai:mock:timeout" in failed_ids
+        assert "oai:mock:ok" not in failed_ids
+        xml_files = list(tmp_path.glob("*.xml"))
+        assert len(xml_files) == 1
+
+    def test_connection_error_geht_in_failed_ids(
+        self, requests_mock, prm_base, tmp_path
+    ):
+        """ConnectionError bei GetRecord → ID landet in failed_ids."""
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord("oai:mock:ok")]
+        mock = OAIMock(records=records)
+        mock.register(requests_mock)
+
+        requests_mock.get(
+            f"{BASE_URL}?verb=GetRecord&metadataPrefix=oai_dc&identifier=oai:mock:connfail",
+            exc=requests.exceptions.ConnectionError,
+        )
+
+        failed_dl, failed_ids = harvest_files(
+            ["oai:mock:ok", "oai:mock:connfail"],
+            prm_base,
+            str(tmp_path),
+            session=requests.Session(),
+        )
+
+        assert "oai:mock:connfail" in failed_ids
+        assert "oai:mock:ok" not in failed_ids
+
+    def test_alle_ids_timeout_keine_dateien(
+        self, requests_mock, prm_base, tmp_path
+    ):
+        """Alle GetRecord-Requests schlagen fehl → keine Dateien, alle in failed_ids."""
+        from ometha.harvester import harvest_files
+
+        mock = OAIMock(records=[])
+        mock.register(requests_mock)
+
+        for i in range(3):
+            requests_mock.get(
+                f"{BASE_URL}?verb=GetRecord&metadataPrefix=oai_dc&identifier=oai:mock:{i:03d}",
+                exc=requests.exceptions.Timeout,
+            )
+
+        ids = [f"oai:mock:{i:03d}" for i in range(3)]
+        failed_dl, failed_ids = harvest_files(
+            ids, prm_base, str(tmp_path), session=requests.Session()
+        )
+
+        assert len(failed_ids) == 3
+        assert len(list(tmp_path.glob("*.xml"))) == 0
+
+    def test_http_500_geht_in_failed_download(
+        self, requests_mock, prm_base, tmp_path
+    ):
+        """HTTP 500 bei GetRecord → ID landet in failed_download (nicht failed_ids)."""
+        from ometha.harvester import harvest_files
+
+        mock = OAIMock(records=[])
+        mock.register(requests_mock)
+
+        requests_mock.get(
+            f"{BASE_URL}?verb=GetRecord&metadataPrefix=oai_dc&identifier=oai:mock:500",
+            status_code=500,
+        )
+
+        failed_dl, failed_ids = harvest_files(
+            ["oai:mock:500"], prm_base, str(tmp_path), session=requests.Session()
+        )
+
+        assert "oai:mock:500" in failed_dl
+        assert failed_ids == []
+
+    # ------------------------------------------------------------------
+    # get_identifier(): Retry-Logik bei langsamer Schnittstelle
+    # ------------------------------------------------------------------
+
+    def test_timeout_retry_erfolgreich(self, requests_mock, session, prm_base):
+        """
+        Erster Request → Timeout, zweiter → Erfolg.
+        time.sleep wird gemockt, damit der Test nicht 20 Sekunden wartet.
+        """
+        from unittest.mock import patch
+        from ometha.harvester import get_identifier
+
+        mock = OAIMock.with_dc_records(3)
+        call_count = {"n": 0}
+
+        def flaky_response(request, context):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise requests.exceptions.Timeout("simulierter Timeout")
+            return mock._dispatch(request, context)
+
+        requests_mock.get(BASE_URL, text=flaky_response)
+
+        url = f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc"
+        with patch("ometha.harvester.time.sleep"):
+            ids = get_identifier(prm_base, url, session)
+
+        assert len(ids) == 3
+        assert call_count["n"] == 2  # einmal Timeout, einmal Erfolg
+
+    def test_zwei_timeouts_dann_erfolg(self, requests_mock, session, prm_base):
+        """Zwei Timeouts, dritter Request erfolgreich – alle IDs zurückgegeben."""
+        from unittest.mock import patch
+        from ometha.harvester import get_identifier
+
+        mock = OAIMock.with_dc_records(5)
+        call_count = {"n": 0}
+
+        def two_failures(request, context):
+            call_count["n"] += 1
+            if call_count["n"] <= 2:
+                raise requests.exceptions.Timeout("simulierter Timeout")
+            return mock._dispatch(request, context)
+
+        requests_mock.get(BASE_URL, text=two_failures)
+
+        url = f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc"
+        with patch("ometha.harvester.time.sleep"):
+            ids = get_identifier(prm_base, url, session)
+
+        assert len(ids) == 5
+
+    def test_alle_retries_erschoepft_endet_mit_exit(
+        self, requests_mock, session, prm_base, tmp_path
+    ):
+        """
+        Alle 3 Retry-Versuche schlagen fehl → sys.exit() wird gerufen.
+        time.sleep wird gemockt um 20s+40s+80s Wartezeit zu vermeiden.
+        """
+        from unittest.mock import patch
+        from ometha.harvester import get_identifier
+
+        requests_mock.get(BASE_URL, exc=requests.exceptions.Timeout)
+
+        prm_base["out_f"] = str(tmp_path)
+        url = f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc"
+        with patch("ometha.harvester.time.sleep"):
+            with pytest.raises(SystemExit):
+                get_identifier(prm_base, url, session)
+
+    def test_resumption_token_wird_bei_timeout_gespeichert(
+        self, requests_mock, session, prm_base, tmp_path
+    ):
+        """
+        Timeout auf Seite 2 → der zuletzt erfolgreiche ResumptionToken
+        wird als Datei gespeichert.
+        """
+        from unittest.mock import patch
+        from ometha.harvester import get_identifier
+
+        mock = OAIMock.with_dc_records(6, page_size=3)
+        call_count = {"n": 0}
+
+        def fail_on_second_page(request, context):
+            call_count["n"] += 1
+            if call_count["n"] > 1:
+                raise requests.exceptions.Timeout("Timeout auf Seite 2")
+            return mock._dispatch(request, context)
+
+        requests_mock.get(BASE_URL, text=fail_on_second_page)
+
+        prm_base["out_f"] = str(tmp_path)
+        url = f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc"
+        with patch("ometha.harvester.time.sleep"):
+            with pytest.raises(SystemExit):
+                get_identifier(prm_base, url, session)
+
+        # ResumptionToken-Datei muss angelegt worden sein
+        token_files = list(tmp_path.glob("resumption_token_*.txt"))
+        assert len(token_files) >= 1
+        content = token_files[0].read_text()
+        assert "resumptiontoken" in content.lower() or "token" in content.lower()

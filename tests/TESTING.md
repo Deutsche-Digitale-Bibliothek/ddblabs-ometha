@@ -57,6 +57,7 @@ Integration der Harvester-Kernlogik gegen den OAI-PMH-Mock.
 | `Test503Retry` | 4 | 503-Simulation, Retry nach erstem Fehler, nur einmalig |
 | `TestHarvestFiles` | 4 | Datei-Output für alle IDs, fehlende IDs → `failed_download`, JSON-Export, Deleted Records |
 | `TestDatefilterEdgeCases` | 6 | Grenzwerte from/until inklusiv, `noRecordsMatch`, Mischgranularität |
+| `TestTimeoutHandling` | 8 | Timeout/ConnectionError → `failed_ids`; HTTP 500 → `failed_download`; Retry nach Timeout; alle Retries erschöpft → `sys.exit()`; ResumptionToken wird bei Abbruch gespeichert |
 
 ### `test_cli.py` – 80 Tests
 
