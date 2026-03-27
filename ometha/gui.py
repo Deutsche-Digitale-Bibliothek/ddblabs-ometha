@@ -9,7 +9,7 @@ from tkinter import filedialog
 import requests
 import urllib3
 from lxml import etree
-from nicegui import run, ui
+from nicegui import app, run, ui
 
 from .harvester import get_identifier, harvest_files
 from .helpers import NAMESPACE, TIMESTR
@@ -71,7 +71,7 @@ def index():
         with ui.card().classes("w-full"):
             ui.label("Pflichtfelder").classes("font-semibold mb-2")
             with ui.row().classes("w-full gap-2 items-end"):
-                b_url = ui.input("Base-URL", placeholder="https://oai.example.org/").classes("flex-1")
+                b_url = ui.input("Base-URL", placeholder="https://oai.deutsche-digitale-bibliothek.de").classes("flex-1")
                 fetch_btn = ui.button(icon="travel_explore").props("flat dense").tooltip("Sets & Formate laden")
             fetch_status = ui.label("").classes("text-xs text-gray-400 -mt-2")
             pref = ui.select(
@@ -111,7 +111,7 @@ def index():
                     with ui.menu() as u_date_menu:
                         ui.date(mask="YYYY-MM-DD").bind_value(u_date)
             with ui.row().classes("w-full gap-4"):
-                n_procs = ui.number("Parallele Downloads", value=16, min=1, max=100).classes("flex-1")
+                n_procs = ui.number("Parallele Downloads", value=4, min=1, max=100).classes("flex-1")
                 timeout = ui.number("Timeout (s)", value=0, min=0).classes("flex-1")
             exp_type = ui.select(["xml", "json"], value="xml", label="Exportformat").classes("w-full")
 
@@ -122,7 +122,25 @@ def index():
         with ui.row().classes("items-center gap-4"):
             start_btn = ui.button("Harvesting starten", icon="play_arrow").classes("bg-green-600 text-white")
             spinner = ui.spinner(size="lg").classes("hidden")
-            status_label = ui.label("").classes("text-gray-500 text-sm")
+            status_label = ui.label("").classes("text-gray-500 text-sm flex-1")
+            async def quit_app():
+                with ui.dialog() as confirm_dialog, ui.card():
+                    ui.label("Ometha wirklich beenden?").classes("font-semibold")
+                    with ui.row().classes("gap-2 mt-2"):
+                        ui.button("Ja, beenden", icon="power_settings_new").classes("bg-red-600 text-white").on(
+                            "click", lambda: confirm_dialog.submit("yes")
+                        )
+                        ui.button("Abbrechen").props("flat").on(
+                            "click", lambda: confirm_dialog.submit("no")
+                        )
+                result = await confirm_dialog
+                if result == "yes":
+                    await ui.run_javascript("window.close()")
+                    app.shutdown()
+
+            ui.button("Beenden", icon="power_settings_new").props("flat").classes("text-red-500").on(
+                "click", quit_app
+            )
 
         # Log-Ausgabe
         log_area = ui.log(max_lines=500).classes("w-full h-64 font-mono text-sm border rounded")
@@ -247,7 +265,10 @@ def index():
             if prm["sets"] and prm["sets"][0].get("additive"):
                 harvest_url += f"&set={prm['sets'][0]['additive'][0]}"
 
-            ids = await run.io_bound(get_identifier, prm, harvest_url, session)
+            def on_list_size(n: int):
+                log(f"Angegebene ListSize: {n}")
+
+            ids = await run.io_bound(get_identifier, prm, harvest_url, session, on_list_size)
             log(f"{len(ids)} Identifier gefunden.")
 
             # Phase 2: Dateien herunterladen

@@ -39,7 +39,7 @@ from .helpers import (
 
 
 # restliche Funktionen
-def get_identifier(PRM: dict, url: str, session) -> list:
+def get_identifier(PRM: dict, url: str, session, on_list_size=None) -> list:
     """
 
     :param PRM: dict of a
@@ -96,6 +96,9 @@ def get_identifier(PRM: dict, url: str, session) -> list:
                 "info",
                 end="",
             ) if list_size else print("Keine ListSize angegeben")
+            # Callback Funktion für die GUI, damit sie die ListSize anzeigen kann, wenn sie vorhanden ist
+            if list_size and on_list_size:
+                on_list_size(int(list_size.group(1)))
 
         # Token auslesen
         token = root.findtext(f".//{NAMESPACE}resumptionToken")
