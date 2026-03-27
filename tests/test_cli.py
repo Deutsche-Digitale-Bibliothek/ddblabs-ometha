@@ -197,7 +197,7 @@ class TestDefaultCommand:
 
     def test_parallel_default(self):
         prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc"])
-        assert prm["n_procs"] == 16
+        assert prm["n_procs"] is None
 
     def test_timeout_short(self):
         prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc",
@@ -404,9 +404,16 @@ class TestConfCommand:
             prm = parse_with(["conf", "-c", "config.yaml"])
         assert prm["out_f"] == "/data/harvest"
 
-    def test_n_procs_defaults_to_16_in_conf_mode(self):
+    def test_n_procs_is_none_when_not_in_yaml(self):
+        """numberofprocesses nicht in YAML → None (auto-scaling in main.py)."""
         prm = self._parse_conf()
-        assert prm["n_procs"] == 16
+        assert prm["n_procs"] is None
+
+    def test_numberofprocesses_from_yaml(self):
+        """numberofprocesses in YAML wird als n_procs übernommen."""
+        data = {**YAML_CONF_MINIMAL, "numberofprocesses": 8}
+        prm = self._parse_conf(yaml_data=data)
+        assert prm["n_procs"] == 8
 
     def test_trailing_whitespace_stripped_from_baseurl(self):
         data = {**YAML_CONF_MINIMAL, "baseurl": "http://x.org/oai/ "}
