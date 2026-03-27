@@ -16,6 +16,7 @@ dependencies = [
     "colorama>=0.4.6",
     "loguru>=0.7.3",
     "lxml>=6.0.2",
+    "nicegui>=3.9.0",
     "p-tqdm>=1.4.2",
     "pretty-errors>=1.2.25",
     "progress>=1.6.1",
@@ -35,6 +36,7 @@ Repository = "https://github.com/Deutsche-Digitale-Bibliothek/ddblabs-ometha"
 
 [project.scripts]
 ometha = "ometha.main:start_process"
+ometha-gui = "ometha.gui:start_gui"
 
 
 [tool.setuptools]
