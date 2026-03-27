@@ -43,4 +43,7 @@ ometha-gui = "ometha.gui:start_gui"
 packages = ["ometha"]
 
 [dependency-groups]
-dev = ["requests-mock>=1.12.1"]
+dev = [
+    "requests-mock>=1.12.1",
+    "ruff>=0.15.8",
+]

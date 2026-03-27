@@ -14,11 +14,7 @@ from yaspin import yaspin
 from yaspin.spinners import Spinners
 from loguru import logger
 from requests.exceptions import (
-    ConnectionError,
-    HTTPError,
     RequestException,
-    RetryError,
-    Timeout,
 )
 from tqdm import tqdm
 
@@ -113,7 +109,7 @@ def get_identifier(PRM: dict, url: str, session, on_list_size=None) -> list:
 
         # Periodically save resumption token for recovery
         if token and len(id_list) % token_save_interval == 0:
-            token_file = os.path.join(PRM.get("out_f", "."), f"resumption_token_latest.txt")
+            token_file = os.path.join(PRM.get("out_f", "."), "resumption_token_latest.txt")
             try:
                 with open(token_file, "w") as f:
                     f.write(f"Resume with: --resumptiontoken {token}\n")
@@ -315,7 +311,7 @@ def read_yaml_file(file_path: str, keys: list, default: any = None) -> list:
                 value = y.get(key, default)
                 result.append(value)
             return result
-    except OSError as e:
+    except OSError:
         log_critical_and_print_and_exit(
             f"\n{FEHLER} Datei {file_path} kann nicht gelesen werden."
         )
