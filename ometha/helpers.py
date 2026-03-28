@@ -1,6 +1,7 @@
 import re
 import sys
 import time
+from datetime import datetime, timedelta
 from typing import Any
 
 from colorama import Fore, Style
@@ -17,6 +18,7 @@ INFO = f"{Fore.YELLOW}Information: {Fore.WHITE}"
 TIMESTR = time.strftime("%Y-%m-%d_%H_%M_%SZ")
 NAMESPACE = "{http://www.openarchives.org/OAI/2.0/}"
 ISODATEREGEX = "(?:19|20)[0-9]{2}-(?:(?:0[1-9]|1[0-2])-(?:0[1-9]|1[0-9]|2[0-9])|(?:(?!02)(?:0[1-9]|1[0-2])-(?:30))|(?:(?:0[13578]|1[02])-31))"
+NATURALDATEREGEX = r"^(\d+)(mo|m|h|d|w)$"
 URLREGEX = r"https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)"
 
 # initialize all parameters in a dict shortened as PRM
@@ -39,6 +41,32 @@ PRM = {
     "mode": None,  # mode: str "ui" or "cli"
     "exp_type": None,  # export type either "xml" or "json"
 }
+
+
+def parse_natural_date(value: str) -> str | None:
+    """Wandelt einen natürlichsprachigen Datumsausdruck in ein ISO8601-Datum (YYYY-MM-DD) um.
+
+    Unterstützte Einheiten:
+      - ``20m``  → vor 20 Minuten
+      - ``2h``   → vor 2 Stunden
+      - ``1d``   → vor 1 Tag
+      - ``3w``   → vor 3 Wochen
+      - ``1mo``  → vor 1 Monat (ca. 30 Tage)
+
+    Args:
+        value: Eingabestring, z. B. ``"1d"`` oder ``"20m"``.
+
+    Returns:
+        ISO8601-Datumsstring (``YYYY-MM-DD``) oder ``None`` wenn das Format
+        nicht erkannt wird.
+    """
+    match = re.match(NATURALDATEREGEX, value.strip())
+    if not match:
+        return None
+    n, unit = int(match.group(1)), match.group(2)
+    units_to_seconds = {"m": 60, "h": 3600, "d": 86400, "w": 604800, "mo": 2592000}
+    delta = timedelta(seconds=n * units_to_seconds[unit])
+    return (datetime.now() - delta).strftime("%Y-%m-%d")
 
 
 def configure_logging() -> None:

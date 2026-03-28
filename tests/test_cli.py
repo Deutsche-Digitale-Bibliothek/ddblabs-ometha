@@ -15,7 +15,10 @@ das globale PRM-Dict wird vor jedem Test zurückgesetzt.
 """
 
 import os
+import re
 import sys
+from datetime import datetime, timedelta
+
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -322,6 +325,126 @@ class TestDefaultCommand:
     def test_auto_mode_false_for_default(self):
         prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc"])
         assert prm["auto_m"] is not True
+
+
+# ---------------------------------------------------------------------------
+# Natural language date parsing
+# ---------------------------------------------------------------------------
+
+ISODATEREGEX = r"^\d{4}-\d{2}-\d{2}$"
+
+
+class TestParseNaturalDate:
+    """Tests für parse_natural_date() aus helpers.py."""
+
+    def setup_method(self):
+        from ometha.helpers import parse_natural_date
+
+        self.pnd = parse_natural_date
+
+    def _assert_iso_date(self, result):
+        assert result is not None
+        assert re.match(ISODATEREGEX, result), f"Kein ISO8601-Datum: {result!r}"
+
+    def test_days(self):
+        result = self.pnd("1d")
+        self._assert_iso_date(result)
+        expected = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        assert result == expected
+
+    def test_multiple_days(self):
+        result = self.pnd("7d")
+        expected = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+        assert result == expected
+
+    def test_hours(self):
+        result = self.pnd("2h")
+        self._assert_iso_date(result)
+        expected = (datetime.now() - timedelta(hours=2)).strftime("%Y-%m-%d")
+        assert result == expected
+
+    def test_minutes(self):
+        result = self.pnd("20m")
+        self._assert_iso_date(result)
+        expected = (datetime.now() - timedelta(minutes=20)).strftime("%Y-%m-%d")
+        assert result == expected
+
+    def test_weeks(self):
+        result = self.pnd("3w")
+        expected = (datetime.now() - timedelta(weeks=3)).strftime("%Y-%m-%d")
+        assert result == expected
+
+    def test_months(self):
+        result = self.pnd("1mo")
+        self._assert_iso_date(result)
+        expected = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        assert result == expected
+
+    def test_invalid_returns_none(self):
+        assert self.pnd("not-a-date") is None
+
+    def test_plain_number_returns_none(self):
+        assert self.pnd("42") is None
+
+    def test_unknown_unit_returns_none(self):
+        assert self.pnd("5y") is None
+
+    def test_whitespace_stripped(self):
+        result = self.pnd(" 1d ")
+        self._assert_iso_date(result)
+
+
+class TestNaturalDateViaCLI:
+    """Integrationstests: natürlichsprachige Datumsangaben über CLI."""
+
+    def test_fromdate_natural_days(self):
+        prm = parse_with(
+            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "1d"]
+        )
+        assert prm["f_date"] is not None
+        assert re.match(ISODATEREGEX, prm["f_date"])
+        expected = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        assert prm["f_date"] == expected
+
+    def test_fromdate_natural_hours(self):
+        prm = parse_with(
+            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "6h"]
+        )
+        assert prm["f_date"] is not None
+        assert re.match(ISODATEREGEX, prm["f_date"])
+
+    def test_fromdate_natural_minutes(self):
+        prm = parse_with(
+            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "20m"]
+        )
+        assert prm["f_date"] is not None
+        assert re.match(ISODATEREGEX, prm["f_date"])
+
+    def test_untildate_natural_weeks(self):
+        prm = parse_with(
+            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-u", "2w"]
+        )
+        assert prm["u_date"] is not None
+        assert re.match(ISODATEREGEX, prm["u_date"])
+
+    def test_untildate_natural_months(self):
+        prm = parse_with(
+            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-u", "1mo"]
+        )
+        assert prm["u_date"] is not None
+        assert re.match(ISODATEREGEX, prm["u_date"])
+
+    def test_iso_date_still_works(self):
+        prm = parse_with(
+            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "2024-01-15"]
+        )
+        assert prm["f_date"] == "2024-01-15"
+
+    def test_invalid_date_still_none(self):
+        prm = parse_with(
+            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "gestern"]
+        )
+        assert prm["f_date"] is None
 
 
 # ---------------------------------------------------------------------------

@@ -7,7 +7,16 @@ from urllib.parse import parse_qs, urlparse
 
 from ._version import __version__
 from .harvester import read_yaml_file
-from .helpers import ISODATEREGEX, PRM, SEP_LINE, TIMESTR
+from .helpers import ISODATEREGEX, PRM, SEP_LINE, TIMESTR, parse_natural_date
+
+
+def _resolve_date(value: str | None) -> str | None:
+    """Löst einen Datumswert auf – entweder ISO8601 oder natürlichsprachig (z. B. ``1d``)."""
+    if not value:
+        return None
+    if re.match(ISODATEREGEX, str(value)):
+        return str(value)
+    return parse_natural_date(str(value))
 
 
 def parseargs() -> dict[str, Any]:
@@ -156,22 +165,12 @@ def parseargs() -> dict[str, Any]:
             args.datengeber,
             args.set,
         )
-        PRM["f_date"] = (
-            args.fromdate
-            if args.fromdate and re.match(ISODATEREGEX, str(args.fromdate))
-            else None
-        )
-        PRM["u_date"] = (
-            args.untildate
-            if args.untildate and re.match(ISODATEREGEX, str(args.untildate))
-            else None
-        )
-        print(
-            f"{SEP_LINE}{args.untildate} ist kein valides ISO8601 Date."
-        ) if args.fromdate and not PRM["f_date"] else None
-        print(
-            f"{SEP_LINE}{args.fromdate} ist kein valides ISO8601 Date."
-        ) if args.untildate and not PRM["u_date"] else None
+        PRM["f_date"] = _resolve_date(args.fromdate)
+        PRM["u_date"] = _resolve_date(args.untildate)
+        if args.fromdate and not PRM["f_date"]:
+            print(f"{SEP_LINE}{args.fromdate} ist kein valides ISO8601 Date.")
+        if args.untildate and not PRM["u_date"]:
+            print(f"{SEP_LINE}{args.untildate} ist kein valides ISO8601 Date.")
     elif args.command == "conf":
         PRM["conf_m"] = True
         PRM["conf_f"], PRM["auto_m"], PRM["exp_type"] = (
