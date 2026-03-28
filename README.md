@@ -142,15 +142,16 @@ ometha default -b https://oai.schnittstelle.de -m metadataprefix -d ordnername -
 
 Optionale Parameter:
 
-- `-s/--set`: Angabe von Set(s): Mehrere Sets werden getrennt durch ein Leerzeichen eingegeben: `-s Seteins Setzwei`
-- `-t/--timeout`: Timeout zwischen den GetRecord Anfragen in Sekunden (nur für wirklich instabile Schnittstellen)
-- `-o/--outputfolder`: Angabe des Ordners, in dem der beim Harvesting angelegte Datenpartner-Ordner erzeugt wird
+- `-s/--set`: Angabe von Set(s), kommagetrennt: `-s Seteins,Setzwei`. Mit `/` lässt sich eine Schnittmenge bilden: `-s SetA,SetB/SetC` harvestet alle Records aus SetA und SetB, die auch in SetC vorkommen.
+- `-t/--timeout`: Timeout zwischen den GetRecord-Anfragen in Sekunden (nur für instabile Schnittstellen)
+- `-o/--outputfolder`: Ordner, in dem der Datenpartner-Ordner erzeugt wird
 - `-d/--datengeber`: Name des Datenpartner-Ordners
-- `-f/--fromdate`: From-Date: ISO8601 Zeitangabe (YYYY-MM-DD), Harvesting von OAI Records ab diesem Zeitpunkt
-- `-u/--untildate`: Until-Date: ISO8601 Zeitangabe (YYYY-MM-DD), Harvesting von OAI Records bis zu diesem Zeitpunkt
-- `--resumptiontoken`: ResumptionToken, falls das Identifier Harvesting abgebrochen war und wieder aufgenommen werden soll ([keine Kurzform!](#errorhandling-abbruch-beim-harvesten-der-oai-identifier))
-- `-p/--parallel`: Angabe der parallelen Downloads via `GetRecord` - default ist 16, wird auf maximal 100 begrenzt. Kann je nach Schnittstelle extreme GEschwindigkeitsvorteile bringen oder zu vielen Fehlern führen, in diesem Fall ist der Wert zu verringern.
-- `--debug`: Schalter (ohne weitere Angabe von Argumenten) um Debugging zu aktivieren (verboser Output)
+- `-f/--fromdate`: Harvesting von OAI-Records ab diesem Zeitpunkt. Akzeptiert ISO8601 (`2024-01-15`, `2024-01-15T10:00:00Z`) oder natürlichsprachige Angaben (`1d`, `6h`, `20m`, `3w`, `1mo`)
+- `-u/--untildate`: Harvesting von OAI-Records bis zu diesem Zeitpunkt. Gleiche Formate wie `-f`
+- `--resumptiontoken`: ResumptionToken, falls das Identifier-Harvesting abgebrochen war ([keine Kurzform!](#errorhandling-abbruch-beim-harvesten-der-oai-identifier))
+- `-p/--parallel`: Parallele Downloads via `GetRecord` (Standard: automatisch basierend auf ID-Anzahl, max. 100)
+- `-e/--exporttype`: Exportformat `xml` (Standard) oder `json`
+- `--debug`: Debugging aktivieren (verboser Output)
 
 ## Harvesten mit Konfigurationsdateien (`config`)
 
@@ -160,7 +161,7 @@ Ometha unterstützt Harvesting über Konfigurationsdateien. So können Harvestin
 ometha conf -c saarland.yaml
 ```
 
-Mit dem optionalen Parameter `-a` bzw. `--auto` wird der **Automatikmodus** für die Angaben des from- und until-Datums aktiviert: Dabei wird beim Start der until-Wert auf das aktuelle Datum gesetzt und somit der Zeitraum vom angegebenen from-Date bis zum aktuellen Zeitpunkt geharvestet, nach erfolgreichem Harvesting wird dann der from-Wert auf das aktuelle Datum gesetzt. Beim nächsten Harvesting Vorgang wird wieder zunächst das until-Datum aktualisiert, so dass immer der Zeitraum seit dem letzten Harvesting Vorgang eingestellt ist.
+Mit dem optionalen Parameter `-a` bzw. `--auto` wird der **Automatikmodus** aktiviert: Beim Start wird `until-Datum` auf den aktuellen Zeitpunkt gesetzt, nach erfolgreichem Harvesting wird `from-Datum` aktualisiert. Beim nächsten Lauf ist damit automatisch der Zeitraum seit dem letzten Harvesting eingestellt. Ometha verwendet dabei das vollständige Datetime-Format (`YYYY-MM-DDThh:mm:ssZ`), sofern die Schnittstelle das unterstützt.
 
 Beispiel für eine Konfigurationsdatei:
 
@@ -174,6 +175,8 @@ sets:
 # sets:
 #   - Seteins
 #   - Setzwei
+# Manuell gesetzte Zeitgrenzen (werden von --auto nicht überschrieben,
+# solange from-Datum/until-Datum nicht vorhanden sind):
 fromdate: '2020-02-13'
 untildate: null
 timeout: 0
@@ -183,18 +186,27 @@ debug: false
 # numberofprocesses: 8
 ```
 
-Pflichtfelder sind `baseurl` und `metadataPrefix`. Der Key `debug` nimmt nur die Werte `true` und `false` an, der Key `timeout` nur Zahlen. From- und until-date können als String (mit Anführungszeichen) oder als Datum (ohne Anführungszeichen) eingegeben werden. Alle anderen Keys sind optional und können `null` sein.
+Pflichtfelder sind `baseurl` und `metadataPrefix`. Der Key `debug` nimmt nur `true` und `false` an, `timeout` nur Zahlen. Datumswerte können als String (`'2024-01-15'`) oder als ISO8601-Datetime (`'2024-01-15T10:00:00Z'`) angegeben werden. Alle anderen Keys sind optional und können `null` sein.
 
-Kommandozeilen Parameter für den `conf` Modus:
+Im `--auto`-Modus verwaltet Ometha zusätzlich die Keys `from-Datum` und `until-Datum` (mit Bindestrich) direkt in der Konfigurationsdatei. Diese haben Vorrang vor `fromdate`/`untildate`.
+
+Kommandozeilen-Parameter für den `conf`-Modus:
 
 ```
-usage: Ometha conf [-h] --conf CONF [--auto] [--debug]
+usage: ometha conf [-h] --conf CONF [--auto] [--no-log] [--cleanup-on-empty]
+                   [--exporttype EXPORTTYPE] [--debug]
 
 optional arguments:
-  -h, --help            show this help message and exit
-  --conf CONF, -c CONF  relativer oder absoluter Pfad zur YAML Konfigurationsdatei
-  --auto, -a            Automatischer Modus zum Harvesten des Zeitraums vom from-date bis heute. Passt die Daten in der Konfigurationsdatei automatisch an.
-  --debug               Gibt den Return der ListIdentifiers aus
+  -h, --help                    show this help message and exit
+  --conf CONF, -c CONF          Pfad zur YAML-Konfigurationsdatei
+  --auto, -a                    Automatischer Modus: from-/until-Datum wird nach
+                                jedem Lauf in der Konfigurationsdatei aktualisiert
+  --no-log                      Kein Logfile anlegen (für Cron-Betrieb mit
+                                externem Logging empfohlen)
+  --cleanup-on-empty            Ausgabeordner löschen wenn keine Datensätze
+                                geharvestet wurden
+  --exporttype, -e              Exportformat: xml (Standard) oder json
+  --debug                       Verboser Output
 ```
 
 
@@ -247,40 +259,48 @@ OAI-PMH unterstützt zwei Datums-Granularitäten: `YYYY-MM-DD` (nur Datum) und `
 
 ## `auto`-Modus
 
-Versucht, die Parameter aus einer kompletten OAI-URL auszulesen. Einziger Parameter ist `-u` für die URL:
+Liest alle Parameter aus einer vollständigen OAI-URL. Einziger Pflichtparameter ist `-u`:
 
 ```
-ometha auto -u https://digital.sulb.uni-saarland.de/viewer/oai/?verb=ListIdentifiers&metadataPrefix=mets&until=2021-01-01&set=saarlandica
+ometha auto -u "https://digital.sulb.uni-saarland.de/viewer/oai/?verb=ListIdentifiers&metadataPrefix=mets&until=2021-01-01&set=saarlandica"
 ```
 
 ```
-usage: ometha auto [-h] --url URL [--outputfolder OUTPUTFOLDER]
+usage: ometha auto [-h] --url URL [--parallel PARALLEL] [--timeout TIMEOUT]
+                   [--outputfolder OUTPUTFOLDER] [--exporttype EXPORTTYPE] [--debug]
 
 optional arguments:
-  -h, --help            show this help message and exit
-  --url URL, -u URL     URL
-  --outputfolder OUTPUTFOLDER, -o OUTPUTFOLDER
-                        Output Ordner
+  -h, --help                      show this help message and exit
+  --url URL, -u URL               Vollständige OAI-URL mit Parametern
+  --parallel PARALLEL, -p         Parallele Downloads (Standard: automatisch)
+  --timeout TIMEOUT, -t           Timeout in Sekunden (Standard: 0)
+  --outputfolder OUTPUTFOLDER, -o Ausgabeordner
+  --exporttype EXPORTTYPE, -e     Exportformat: xml oder json (Standard: xml)
+  --debug                         Verboser Output
 ```
 
 ## `ids`: Harvesten einer ID-Liste
 
-Für den Fall, dass eine bereits mit Ometha erstellte ID Liste geharvestet werden soll, nutzt man den `ids` Modus:
+Für den Fall, dass eine bereits mit Ometha erstellte ID-Liste erneut geharvestet werden soll:
 
 ```
-usage: ometha ids [-h] --idfile IDFILE [--datengeber DATENGEBER] [--debug]
+ometha ids -i _ometha_successful_ids.yaml
+```
+
+```
+usage: ometha ids [-h] --idfile IDFILE [--datengeber DATENGEBER]
+                  [--parallel PARALLEL] [--timeout TIMEOUT]
+                  [--outputfolder OUTPUTFOLDER] [--exporttype EXPORTTYPE] [--debug]
 
 optional arguments:
-  -h, --help            show this help message and exit
-  --idfile IDFILE, -i IDFILE
-                        Path to ID YAML File
-  --parallel PARALLEL, -p PARALLEL
-                        Number of parallel downloads (default: 16)
-  --datengeber DATENGEBER, -d DATENGEBER
-                        Datengeber (Ordnername)
-  --outputfolder OUTPUTFOLDER, -o OUTPUTFOLDER
-                        Output Ordner
-  --debug               Gibt den Return der ListIdentifiers aus
+  -h, --help                      show this help message and exit
+  --idfile IDFILE, -i IDFILE      Pfad zur ID-YAML-Datei
+  --datengeber DATENGEBER, -d     Datenpartner-Ordnername (Standard: Zeitstempel)
+  --parallel PARALLEL, -p         Parallele Downloads (Standard: automatisch)
+  --timeout TIMEOUT, -t           Timeout in Sekunden (Standard: 0)
+  --outputfolder OUTPUTFOLDER, -o Ausgabeordner
+  --exporttype EXPORTTYPE, -e     Exportformat: xml oder json (Standard: xml)
+  --debug                         Verboser Output
 ```
 
 ## Errorhandling: Abbruch beim Harvesten der OAI-Identifier
@@ -299,4 +319,4 @@ ometha default -b https://oai.schnittstelle.de -m metadataprefix -d ordnername -
 
 Beim Start von Ometha wird überprüft, ob eine `ometha.yaml` Einstellungsdatei vorhanden ist. Ist das nicht der Fall, kann diese von Ometha erzeugt werden. Bislang (Version 1.8) wird darüber nur der [User-Agent](https://en.wikipedia.org/wiki/User_agent#Use_in_HTTP) konfiguriert.
 
-Die Datei wird unter Windows neben der ausgefürten Ometha Datei abgelegt, in Linux und macOS als versteckte Datei direkt im Home-Verzeichnis des Benutzers (`~/.ometha.yaml`).
+Die Datei wird unter Windows neben der ausgeführten Ometha-Datei abgelegt (`ometha.yaml`), in Linux und macOS als versteckte Datei direkt im Home-Verzeichnis des Benutzers (`~/.ometha`).
