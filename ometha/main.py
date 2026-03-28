@@ -273,7 +273,7 @@ def start_process() -> None:
             import shutil
 
             shutil.rmtree(folder, ignore_errors=True)
-        log_critical_and_print_and_exit(f"{SEP_LINE}{FEHLER} Keine IDs gefunden. Programm beendet.")
+        print_and_log(f"{SEP_LINE}Keine IDs gefunden. Programm beendet.", logger, "warning")
         sys.exit()
     # ---- Start Harvesting ----
     failed_download, failed_ids = harvest_files(ids, PRM, folder, session)
