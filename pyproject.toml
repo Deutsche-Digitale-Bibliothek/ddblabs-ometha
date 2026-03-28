@@ -36,7 +36,6 @@ Repository = "https://github.com/Deutsche-Digitale-Bibliothek/ddblabs-ometha"
 
 [project.scripts]
 ometha = "ometha.main:main"
-ometha-gui = "ometha.gui:start_gui"
 
 
 [tool.setuptools]

@@ -311,6 +311,10 @@ def start_process() -> None:
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "gui":
+        from .gui import start_gui
+        start_gui()
+        return
     try:
         start_process()
     except KeyboardInterrupt:

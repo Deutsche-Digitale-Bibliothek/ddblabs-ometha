@@ -88,7 +88,7 @@ Ometha enthält einen grafischen Modus auf Basis von [NiceGUI](https://nicegui.i
 ## Starten
 
 ```bash
-ometha-gui
+ometha gui
 ```
 
 Der Browser öffnet sich automatisch unter `http://localhost:8765`.
@@ -97,24 +97,24 @@ Der Browser öffnet sich automatisch unter `http://localhost:8765`.
 
 ### Pflichtfelder
 
-| Feld | Beschreibung |
-|------|-------------|
-| **Base-URL** | URL der OAI-PMH-Schnittstelle |
+| Feld                | Beschreibung                                     |
+|---------------------|--------------------------------------------------|
+| **Base-URL**        | URL der OAI-PMH-Schnittstelle                    |
 | **Metadata Prefix** | Metadaten-Format (z. B. `oai_dc`, `mets`, `ddb`) |
 
 Nach dem Verlassen des Base-URL-Felds (oder per Klick auf den Globus-Button neben dem Feld) lädt Ometha automatisch die verfügbaren Metadata-Prefixe und Sets von der Schnittstelle und befüllt die entsprechenden Felder.
 
 ### Optionale Felder
 
-| Feld | Beschreibung |
-|------|-------------|
-| **Datengeber** | Name des Ausgabeordners (Standard: Zeitstempel) |
-| **Ausgabeordner** | Zielverzeichnis; über den Ordner-Button kann ein Dialog geöffnet werden |
-| **Set(s)** | Ein oder mehrere Sets (Mehrfachauswahl möglich) |
-| **Von-Datum / Bis-Datum** | ISO8601-Zeitraum (YYYY-MM-DD); über das Kalender-Icon auswählbar |
-| **Parallele Downloads** | Anzahl gleichzeitiger `GetRecord`-Anfragen (Standard: 4) |
-| **Timeout (s)** | Wartezeit zwischen Anfragen in Sekunden (Standard: 0) |
-| **Exportformat** | `xml` oder `json` |
+| Feld                      | Beschreibung                                                            |
+|---------------------------|-------------------------------------------------------------------------|
+| **Datengeber**            | Name des Ausgabeordners (Standard: Zeitstempel)                         |
+| **Ausgabeordner**         | Zielverzeichnis; über den Ordner-Button kann ein Dialog geöffnet werden |
+| **Set(s)**                | Ein oder mehrere Sets (Mehrfachauswahl möglich)                         |
+| **Von-Datum / Bis-Datum** | ISO8601-Zeitraum (YYYY-MM-DD); über das Kalender-Icon auswählbar        |
+| **Parallele Downloads**   | Anzahl gleichzeitiger `GetRecord`-Anfragen (Standard: 4)                |
+| **Timeout (s)**           | Wartezeit zwischen Anfragen in Sekunden (Standard: 0)                   |
+| **Exportformat**          | `xml` oder `json`                                                       |
 
 ### Harvesting starten
 
@@ -136,7 +136,7 @@ Der Aufruf von Ometha kennt vier _"positional arguments"_, die die  Modi untersc
 
 Ein Kommandozeilenaufruf sieht dann bspw. so aus:
 
-```
+```shell
 ometha default -b https://oai.schnittstelle.de -m metadataprefix -d ordnername -s set1 set2 -o /home/harvesting/
 ```
 
@@ -157,7 +157,7 @@ Optionale Parameter:
 
 Ometha unterstützt Harvesting über Konfigurationsdateien. So können Harvestingvorgänge komplett automatisiert werden und auch per cronjob o. ä. aufgerufen werden. Beim Aufruf mit dem _positional_ Argument `conf` und dem Argument `-c` mit dem Pfad zu einer entsprechenden Konfigurationsdatei (`ometha conf -c /pfad/zur/konfigurationsdatei.yaml`) werden alle Parameter aus einer YAML Datei gelesen:
 
-```
+```shell
 ometha conf -c saarland.yaml
 ```
 
@@ -171,10 +171,12 @@ metadataPrefix: mets
 datengeber: SULB
 sets:
   - hk
-# Mehrere Sets:
+# Mehrere Sets (alle additiv – Schnittmengen nur per CLI mit `/`-Syntax möglich):
 # sets:
 #   - Seteins
 #   - Setzwei
+# Kein Set-Filter:
+# sets: null
 # Manuell gesetzte Zeitgrenzen (werden von --auto nicht überschrieben,
 # solange from-Datum/until-Datum nicht vorhanden sind):
 fromdate: '2020-02-13'
@@ -192,7 +194,7 @@ Im `--auto`-Modus verwaltet Ometha zusätzlich die Keys `from-Datum` und `until-
 
 Kommandozeilen-Parameter für den `conf`-Modus:
 
-```
+```shell
 usage: ometha conf [-h] --conf CONF [--auto] [--no-log] [--cleanup-on-empty]
                    [--exporttype EXPORTTYPE] [--debug]
 
@@ -261,11 +263,11 @@ OAI-PMH unterstützt zwei Datums-Granularitäten: `YYYY-MM-DD` (nur Datum) und `
 
 Liest alle Parameter aus einer vollständigen OAI-URL. Einziger Pflichtparameter ist `-u`:
 
-```
+```shell
 ometha auto -u "https://digital.sulb.uni-saarland.de/viewer/oai/?verb=ListIdentifiers&metadataPrefix=mets&until=2021-01-01&set=saarlandica"
 ```
 
-```
+```shell
 usage: ometha auto [-h] --url URL [--parallel PARALLEL] [--timeout TIMEOUT]
                    [--outputfolder OUTPUTFOLDER] [--exporttype EXPORTTYPE] [--debug]
 
@@ -283,11 +285,11 @@ optional arguments:
 
 Für den Fall, dass eine bereits mit Ometha erstellte ID-Liste erneut geharvestet werden soll:
 
-```
+```shell
 ometha ids -i _ometha_successful_ids.yaml
 ```
 
-```
+```shell
 usage: ometha ids [-h] --idfile IDFILE [--datengeber DATENGEBER]
                   [--parallel PARALLEL] [--timeout TIMEOUT]
                   [--outputfolder OUTPUTFOLDER] [--exporttype EXPORTTYPE] [--debug]
@@ -309,7 +311,7 @@ Während des ID-Harvestings speichert Ometha automatisch alle 1000 IDs einen Che
 
 Falls beim Harvesten der OAI-IDs etwas schief geht, reicht es, sich den letzten angezeigten Resumption-Token zu notieren (bzw. in der Checkpoint-Datei oder Log-Datei zu schauen) und Ometha dann mit dem zusätzlichen Parameter `--resumptiontoken=resumptiontoken` auszuführen bzw. beim interaktiven Modus die Option `[R]` zu wählen:
 
-```
+```shell
 ometha default -b https://oai.schnittstelle.de -m metadataprefix -d ordnername --resumptiontoken=nEk0tn0itpmuser
 ```
 
