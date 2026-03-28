@@ -216,7 +216,7 @@ def parseargs() -> dict[str, Any]:
             PRM["dat_geb"] = read_yaml_file(PRM["conf_f"], ["name"])[0]
 
         # outputfolder: if none is defined use the current working directory
-        PRM["out_f"] = read_yaml_file(PRM["conf_f"], ["outputfolder"], os.getcwd())[0]
+        PRM["out_f"] = read_yaml_file(PRM["conf_f"], ["outputfolder"], os.getcwd())[0] or os.getcwd()
         # n_procs: read from config file, None means auto-scale based on ID count
         PRM["n_procs"] = read_yaml_file(PRM["conf_f"], ["numberofprocesses"])[0]
         # Clean up base URL and prefix if they are not None

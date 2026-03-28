@@ -158,12 +158,14 @@ def start_process() -> None:
     # output PRM dictionary if debug mode is enabled via environment variable
     if os.getenv("OMETHA_DEBUG") == "True":
         print(PRM)
-    # Create folder for log, config file and output in the current directory
-    if PRM["out_f"] is None:
-        PRM["out_f"] = os.path.join(os.getcwd(), "output")
     folder = os.path.join(PRM["out_f"], PRM["dat_geb"], TIMESTR)
     folder = folder.replace(":", "_")
     os.makedirs(folder, exist_ok=True)
+
+    # bei Configmode & Automode das until-Datum setzen bevor es geloggt wird
+    if PRM["conf_m"] and PRM["auto_m"]:
+        change_date(OAITIMESTR, PRM["conf_f"], key="until-Datum")
+        PRM["u_date"] = OAITIMESTR
 
     # Logfile anlegen
     logger.remove()  # Initalen Logger löschen, damit er nicht alles in stderr loggt:
@@ -178,16 +180,18 @@ def start_process() -> None:
         )
         parameters = {
             "Ometha Version": __version__,
-            # fix: PRM["mode"] is not defined
-            "Mode": f"{running_mode} with {PRM['mode']} Mode",
             "Datengeber": PRM["dat_geb"],
             "Base-URL": PRM["b_url"],
             "metadataPrefix": PRM["pref"],
-            "Sets": PRM["sets"],
-            "Timeout": PRM["timeout"],
-            "Outputfolder": PRM["out_f"],
-            "Count of parallel downloads": PRM["n_procs"],
         }
+        if PRM["sets"]:
+            parameters["Sets"] = PRM["sets"]
+        if PRM["timeout"]:
+            parameters["Timeout"] = PRM["timeout"]
+        if PRM["out_f"]:
+            parameters["Outputfolder"] = PRM["out_f"]
+        if PRM["n_procs"] is not None:
+            parameters["Number of parallel downloads"] = PRM["n_procs"]
         if PRM["f_date"] is not None:
             parameters["From date"] = PRM["f_date"]
         if PRM["u_date"] is not None:
@@ -197,9 +201,6 @@ def start_process() -> None:
         if PRM["id_f"] is not None:
             logger.log("PARAMETER", f"ID file: {PRM['id_f']}")
         print(f"{INFO}Logfile: {log_file}")
-
-    # bei Configmode & Automode das Datum der Konfigurationsdatei aktualisieren
-    change_date(OAITIMESTR, PRM["conf_f"], key="until-Datum")
 
     # Baseurl anpassen/überprüfen
     PRM["b_url"] = re.sub(r"(\?.+)", "", PRM["b_url"]).rstrip("/")
@@ -274,6 +275,7 @@ def start_process() -> None:
 
             shutil.rmtree(folder, ignore_errors=True)
         print_and_log(f"{SEP_LINE}Keine IDs gefunden. Programm beendet.", logger, "warning")
+        change_date(OAITIMESTR, PRM["conf_f"], key="from-Datum")
         sys.exit()
     # ---- Start Harvesting ----
     failed_download, failed_ids = harvest_files(ids, PRM, folder, session)
@@ -300,7 +302,6 @@ def start_process() -> None:
         runtime = "{:02}:{:02}:{:.3f}".format(*divmod(timeit.default_timer() - start_time, 3600, 60))
         print_and_log(f"{SEP_LINE}{INFO} Vorgang hat {runtime} gedauert", logger, "info")
 
-    # bei Configmode & Automode das Datum der Konfigurationsdatei aktualisieren
     change_date(OAITIMESTR, PRM["conf_f"], key="from-Datum")
 
     if os.name == "nt":

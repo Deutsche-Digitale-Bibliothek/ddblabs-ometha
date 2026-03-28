@@ -266,6 +266,7 @@ def change_date(date: str, name: str, key: str) -> None:
         )
         doc = yaml.safe_load(open(name))
         doc[key] = date
+        doc = {k: v for k, v in doc.items() if v is not None}
         with open(name, "w") as f:
             yaml.safe_dump(doc, f, default_flow_style=False, sort_keys=False)
 

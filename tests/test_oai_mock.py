@@ -914,6 +914,84 @@ class TestChangeDateYaml:
 
 
 # ---------------------------------------------------------------------------
+# Regression: Auto-Modus setzt PRM["u_date"] auf OAITIMESTR
+# ---------------------------------------------------------------------------
+
+
+class TestAutoModeUDateUpdate:
+    """Regression: Im Auto-Modus muss PRM["u_date"] auf den aktuellen
+    OAITIMESTR gesetzt werden, nicht auf den veralteten Wert aus der YAML-Datei.
+
+    Bug: Nach einem Run enthielten from-Datum und until-Datum denselben Wert T1.
+    Beim nächsten Run wurde PRM["u_date"] = T1 aus der YAML gelesen, aber
+    change_date schrieb T2 nur in die Datei – nicht in PRM. Dadurch wurde
+    die Query mit from=T1, until=T1 gestellt und lieferte kein Delta.
+    """
+
+    def setup_method(self):
+        import ometha.helpers as h
+
+        self._saved = {k: h.PRM[k] for k in ("conf_m", "auto_m", "conf_f", "u_date", "f_date")}
+
+    def teardown_method(self):
+        import ometha.helpers as h
+
+        for k, v in self._saved.items():
+            h.PRM[k] = v
+
+    def test_u_date_wird_auf_oaitimestr_gesetzt(self, tmp_path):
+        """PRM["u_date"] muss nach dem auto-Modus-Block dem aktuellen OAITIMESTR entsprechen."""
+        import ometha.helpers as h
+        from ometha.harvester import change_date
+        from ometha.helpers import OAITIMESTR
+
+        stale_timestamp = "2025-01-01T00:00:00Z"
+        config = tmp_path / "config.yaml"
+        config.write_text(
+            f"baseurl: http://test.org/\nfrom-Datum: '{stale_timestamp}'\nuntil-Datum: '{stale_timestamp}'\n"
+        )
+
+        # Simuliert den Zustand kurz vor dem Harvesting in start_process():
+        # PRM wurde aus der YAML gefüllt (beide Daten gleich = Bug-Zustand)
+        h.PRM["conf_m"] = True
+        h.PRM["auto_m"] = True
+        h.PRM["conf_f"] = str(config)
+        h.PRM["f_date"] = stale_timestamp
+        h.PRM["u_date"] = stale_timestamp  # veralteter Wert aus YAML
+
+        # Fix: change_date + sofortige PRM-Aktualisierung
+        change_date(OAITIMESTR, str(config), "until-Datum")
+        if h.PRM["conf_m"] and h.PRM["auto_m"]:
+            h.PRM["u_date"] = OAITIMESTR
+
+        assert h.PRM["u_date"] == OAITIMESTR
+        assert h.PRM["u_date"] != h.PRM["f_date"], (
+            "u_date darf nicht gleich f_date sein – kein Delta!"
+        )
+
+    def test_u_date_bleibt_unveraendert_ohne_auto_mode(self, tmp_path):
+        """Ohne Auto-Modus darf PRM["u_date"] nicht überschrieben werden."""
+        import ometha.helpers as h
+        from ometha.harvester import change_date
+        from ometha.helpers import OAITIMESTR
+
+        stale_timestamp = "2025-01-01T00:00:00Z"
+        config = tmp_path / "config.yaml"
+        config.write_text(f"baseurl: http://test.org/\nuntil-Datum: '{stale_timestamp}'\n")
+
+        h.PRM["conf_m"] = True
+        h.PRM["auto_m"] = False  # kein Auto-Modus
+        h.PRM["conf_f"] = str(config)
+        h.PRM["u_date"] = stale_timestamp
+
+        change_date(OAITIMESTR, str(config), "until-Datum")
+        if h.PRM["conf_m"] and h.PRM["auto_m"]:
+            h.PRM["u_date"] = OAITIMESTR
+
+        assert h.PRM["u_date"] == stale_timestamp  # unverändert
+
+
+# ---------------------------------------------------------------------------
 # create_id_file() – Dateiinhalt und Wiederlesbarkeit
 # ---------------------------------------------------------------------------
 
