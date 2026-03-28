@@ -81,14 +81,11 @@ def start_process() -> None:
 
     if getattr(sys, "frozen", False):
         application_path = os.path.dirname(os.path.abspath(sys.executable))
-        running_mode = "Frozen/executable"
     else:
         try:
             application_path = os.path.dirname(os.path.abspath(__file__))
-            running_mode = "Non-interactive"
         except NameError:
             application_path = os.getcwd()
-            running_mode = "Interactive"
 
     config_path = (
         os.path.join(os.path.expanduser("~"), ".ometha")

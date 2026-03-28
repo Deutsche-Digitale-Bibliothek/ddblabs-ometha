@@ -8,7 +8,7 @@ from urllib.parse import parse_qs, urlparse
 
 from ._version import __version__
 from .harvester import read_yaml_file
-from .helpers import ISODATEREGEX, PRM, SEP_LINE, TIMESTR, parse_natural_date, resolve_date
+from .helpers import PRM, SEP_LINE, TIMESTR, resolve_date
 
 _resolve_date = resolve_date
 
