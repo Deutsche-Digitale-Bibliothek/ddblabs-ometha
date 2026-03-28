@@ -60,8 +60,8 @@ def parse_natural_date(value: str) -> str | None:
         value: Eingabestring, z. B. ``"1d"`` oder ``"20m"``.
 
     Returns:
-        ISO8601-Datumsstring (``YYYY-MM-DD``) oder ``None`` wenn das Format
-        nicht erkannt wird.
+        ISO8601-Datumsstring (``YYYY-MM-DD`` oder ``YYYY-MM-DDTHH:MM:SSZ`` bei
+        Minuten/Stunden) oder ``None`` wenn das Format nicht erkannt wird.
     """
     match = re.match(NATURALDATEREGEX, value.strip())
     if not match:
@@ -69,7 +69,10 @@ def parse_natural_date(value: str) -> str | None:
     n, unit = int(match.group(1)), match.group(2)
     units_to_seconds = {"m": 60, "h": 3600, "d": 86400, "w": 604800, "mo": 2592000}
     delta = timedelta(seconds=n * units_to_seconds[unit])
-    return (datetime.now() - delta).strftime("%Y-%m-%d")
+    result = datetime.now() - delta
+    if unit in ("m", "h"):
+        return result.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return result.strftime("%Y-%m-%d")
 
 
 def configure_logging() -> None:

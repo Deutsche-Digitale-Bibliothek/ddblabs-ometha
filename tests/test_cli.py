@@ -152,17 +152,17 @@ class TestDefaultCommand:
         prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "2023-06-01"])
         assert prm["f_date"] == "2023-06-01"
 
-    def test_fromdate_invalid_is_none(self):
-        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "not-a-date"])
-        assert prm["f_date"] is None
+    def test_fromdate_invalid_exits(self):
+        with pytest.raises(SystemExit):
+            parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "not-a-date"])
 
     def test_untildate_valid(self):
         prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-u", "2024-12-31"])
         assert prm["u_date"] == "2024-12-31"
 
-    def test_untildate_invalid_is_none(self):
-        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-u", "31.12.2024"])
-        assert prm["u_date"] is None
+    def test_untildate_invalid_exits(self):
+        with pytest.raises(SystemExit):
+            parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-u", "31.12.2024"])
 
     def test_fromdate_and_untildate_together(self):
         prm = parse_with(
@@ -312,6 +312,7 @@ class TestDefaultCommand:
 # ---------------------------------------------------------------------------
 
 ISODATEREGEX = r"^\d{4}-\d{2}-\d{2}$"
+ISODATETIMEREGEX = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
 
 
 class TestParseNaturalDate:
@@ -339,15 +340,13 @@ class TestParseNaturalDate:
 
     def test_hours(self):
         result = self.pnd("2h")
-        self._assert_iso_date(result)
-        expected = (datetime.now() - timedelta(hours=2)).strftime("%Y-%m-%d")
-        assert result == expected
+        assert result is not None
+        assert re.match(ISODATETIMEREGEX, result), f"Kein ISO8601-Datetime: {result!r}"
 
     def test_minutes(self):
         result = self.pnd("20m")
-        self._assert_iso_date(result)
-        expected = (datetime.now() - timedelta(minutes=20)).strftime("%Y-%m-%d")
-        assert result == expected
+        assert result is not None
+        assert re.match(ISODATETIMEREGEX, result), f"Kein ISO8601-Datetime: {result!r}"
 
     def test_weeks(self):
         result = self.pnd("3w")
@@ -387,12 +386,12 @@ class TestNaturalDateViaCLI:
     def test_fromdate_natural_hours(self):
         prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "6h"])
         assert prm["f_date"] is not None
-        assert re.match(ISODATEREGEX, prm["f_date"])
+        assert re.match(ISODATETIMEREGEX, prm["f_date"])
 
     def test_fromdate_natural_minutes(self):
         prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "20m"])
         assert prm["f_date"] is not None
-        assert re.match(ISODATEREGEX, prm["f_date"])
+        assert re.match(ISODATETIMEREGEX, prm["f_date"])
 
     def test_untildate_natural_weeks(self):
         prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-u", "2w"])
@@ -408,9 +407,9 @@ class TestNaturalDateViaCLI:
         prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "2024-01-15"])
         assert prm["f_date"] == "2024-01-15"
 
-    def test_invalid_date_still_none(self):
-        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "gestern"])
-        assert prm["f_date"] is None
+    def test_invalid_date_exits(self):
+        with pytest.raises(SystemExit):
+            parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "gestern"])
 
 
 # ---------------------------------------------------------------------------

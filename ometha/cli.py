@@ -1,6 +1,7 @@
 import argparse
 import os
 import re
+import sys
 import time
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -171,9 +172,9 @@ def parseargs() -> dict[str, Any]:
         PRM["f_date"] = _resolve_date(args.fromdate)
         PRM["u_date"] = _resolve_date(args.untildate)
         if args.fromdate and not PRM["f_date"]:
-            print(f"{SEP_LINE}{args.fromdate} ist kein valides ISO8601 Date.")
+            sys.exit(f"{SEP_LINE}{args.fromdate} ist kein valides Datum. Bitte ISO8601 (YYYY-MM-DD) oder z.B. '20m', '6h', '1d' verwenden.")
         if args.untildate and not PRM["u_date"]:
-            print(f"{SEP_LINE}{args.untildate} ist kein valides ISO8601 Date.")
+            sys.exit(f"{SEP_LINE}{args.untildate} ist kein valides Datum. Bitte ISO8601 (YYYY-MM-DD) oder z.B. '20m', '6h', '1d' verwenden.")
     elif args.command == "conf":
         PRM["conf_m"] = True
         PRM["conf_f"], PRM["auto_m"], PRM["exp_type"] = (
@@ -204,6 +205,10 @@ def parseargs() -> dict[str, Any]:
         u_date_raw = u_auto or u_manual
         PRM["f_date"] = _resolve_date(str(f_date_raw)) if f_date_raw else None
         PRM["u_date"] = _resolve_date(str(u_date_raw)) if u_date_raw else None
+        if f_date_raw and not PRM["f_date"]:
+            sys.exit(f"{SEP_LINE}{f_date_raw} ist kein valides Datum. Bitte ISO8601 (YYYY-MM-DD) oder z.B. '20m', '6h', '1d' verwenden.")
+        if u_date_raw and not PRM["u_date"]:
+            sys.exit(f"{SEP_LINE}{u_date_raw} ist kein valides Datum. Bitte ISO8601 (YYYY-MM-DD) oder z.B. '20m', '6h', '1d' verwenden.")
 
         # If baseurl is not found, try 'url' as a fallback
         if PRM["b_url"] is None:

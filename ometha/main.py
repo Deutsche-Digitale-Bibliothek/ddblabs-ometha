@@ -188,6 +188,10 @@ def start_process() -> None:
             "Outputfolder": PRM["out_f"],
             "Count of parallel downloads": PRM["n_procs"],
         }
+        if PRM["f_date"] is not None:
+            parameters["From date"] = PRM["f_date"]
+        if PRM["u_date"] is not None:
+            parameters["Until date"] = PRM["u_date"]
         for param, value in parameters.items():
             logger.log("PARAMETER", f"{param}: {value}")
         if PRM["id_f"] is not None:
