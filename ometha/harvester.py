@@ -174,11 +174,14 @@ def harvest_files(
     :return: tuple with failed_download, failed_ids ID-Lists
     """
 
-    def save_file(oai_id: str, folder: str, response: str, export_type: str) -> None:
+    def save_file(oai_id: str, folder: str, response: str, export_type: str) -> bool:
         """Save an OAI record response to a file in the given folder.
 
         The filename is derived from the OAI identifier with special characters replaced.
         Saves as XML or JSON depending on export_type; falls back to XML for unknown types.
+
+        Returns:
+            True on success, False if the file could not be saved (e.g. JSON conversion error).
         """
         filename = re.sub(r"([:.|&%$=()\"#+\'´`*~<>!?/;,\[\]]|\s)", "_", oai_id)
         if export_type == "xml":
@@ -186,6 +189,7 @@ def harvest_files(
                 os.path.join(folder, f"{filename}.xml"), "w", encoding="utf8"
             ) as of:
                 of.write(response)
+            return True
         elif export_type == "json":
             try:
                 xml_data = xmltodict.parse(response)
@@ -193,15 +197,17 @@ def harvest_files(
                     os.path.join(folder, f"{filename}.json"), "w", encoding="utf8"
                 ) as of:
                     json.dump(xml_data, of, indent=2)
+                return True
             except Exception as e:
-                print(f"Error converting XML to JSON: {e}")
+                logger.warning(f"XML→JSON-Konvertierung fehlgeschlagen für {oai_id}: {e}")
+                return False
         else:
-            # print(f"Unsupported file type: {export_type}. Reverting to XML.")
             # TODO this check should be done before the harvesting starts
             with open(
                 os.path.join(folder, f"{filename}.xml"), "w", encoding="utf8"
             ) as of:
                 of.write(response)
+            return True
 
     def get_response_text_from_url(
         url: str, session: Session, folder: str, export_type: str
@@ -229,7 +235,8 @@ def harvest_files(
                         f"Datei {url} konnte nicht geharvestet werden ('{errors[0][0]}')"
                     )
                     return {"failed_download": oai_id}
-                save_file(oai_id, folder, resp.text, export_type)
+                if not save_file(oai_id, folder, resp.text, export_type):
+                    return {"failed_download": oai_id}
         except RequestException as e:
             logger.warning(
                 f"Datei {url} wurde aufgrund eines {type(e).__name__} übersprungen: {e}"

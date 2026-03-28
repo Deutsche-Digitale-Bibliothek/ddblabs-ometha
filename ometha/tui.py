@@ -32,6 +32,8 @@ def interactiveMode(session: Session) -> dict[str, Any]:
         A populated PRM dictionary with all parameters entered by the user.
     """
 
+    PRM["mode"] = "ui"
+
     def get_valid_input(prompt, validator, error_message):
         while True:
             user_input = input(prompt).strip()

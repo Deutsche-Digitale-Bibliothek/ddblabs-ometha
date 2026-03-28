@@ -613,3 +613,24 @@ class TestOptionS:
             with pytest.raises(SystemExit) as exc:
                 interactiveMode(session)
         assert exc.value.code == 0
+
+
+# ---------------------------------------------------------------------------
+# PRM["mode"] im TUI-Modus
+# ---------------------------------------------------------------------------
+
+
+class TestPrmModeTui:
+    """interactiveMode() muss PRM["mode"] = "ui" setzen."""
+
+    def test_mode_ui_gesetzt_option_n(self, session):
+        with mock_inputs(*N_INPUTS):
+            prm = interactiveMode(session)
+        assert prm["mode"] == "ui"
+
+    def test_mode_ui_gesetzt_option_r(self, session):
+        inputs = ["R", "testDG", "/tmp", "4", "xml", "0",
+                  "http://oai.example.org/", "oai_dc", "sometoken"]
+        with mock_inputs(*inputs):
+            prm = interactiveMode(session)
+        assert prm["mode"] == "ui"

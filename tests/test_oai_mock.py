@@ -854,3 +854,234 @@ class TestTimeoutHandling:
         assert len(token_files) >= 1
         content = token_files[0].read_text()
         assert "resumptiontoken" in content.lower() or "token" in content.lower()
+
+
+# ---------------------------------------------------------------------------
+# change_date() – YAML-Datei wird korrekt aktualisiert
+# ---------------------------------------------------------------------------
+
+
+class TestChangeDateYaml:
+    """Tests für harvester.change_date() – schreibt from-/until-Datum in YAML."""
+
+    def setup_method(self):
+        import ometha.helpers as h
+        self._saved = {k: h.PRM[k] for k in ("conf_m", "auto_m", "conf_f")}
+
+    def teardown_method(self):
+        import ometha.helpers as h
+        for k, v in self._saved.items():
+            h.PRM[k] = v
+
+    def _activate_auto(self, path):
+        import ometha.helpers as h
+        h.PRM["conf_m"] = True
+        h.PRM["auto_m"] = True
+        h.PRM["conf_f"] = str(path)
+
+    def test_change_date_schreibt_from_datum(self, tmp_path):
+        import yaml
+        from ometha.harvester import change_date, read_yaml_file
+        config = tmp_path / "config.yaml"
+        config.write_text("baseurl: http://test.org/\nfrom-Datum: '2020-01-01'\n")
+        self._activate_auto(config)
+
+        change_date("2025-06-01T10:00:00Z", str(config), "from-Datum")
+
+        result = read_yaml_file(str(config), ["from-Datum"])[0]
+        assert result == "2025-06-01T10:00:00Z"
+
+    def test_change_date_schreibt_until_datum(self, tmp_path):
+        from ometha.harvester import change_date, read_yaml_file
+        config = tmp_path / "config.yaml"
+        config.write_text("baseurl: http://test.org/\n")
+        self._activate_auto(config)
+
+        change_date("2025-12-31T23:59:59Z", str(config), "until-Datum")
+
+        result = read_yaml_file(str(config), ["until-Datum"])[0]
+        assert result == "2025-12-31T23:59:59Z"
+
+    def test_change_date_keine_aktion_wenn_conf_m_false(self, tmp_path):
+        import ometha.helpers as h
+        from ometha.harvester import change_date, read_yaml_file
+        config = tmp_path / "config.yaml"
+        config.write_text("baseurl: http://test.org/\nfrom-Datum: '2020-01-01'\n")
+        h.PRM["conf_m"] = False
+        h.PRM["auto_m"] = True
+
+        change_date("2025-06-01T10:00:00Z", str(config), "from-Datum")
+
+        result = read_yaml_file(str(config), ["from-Datum"])[0]
+        assert result == "2020-01-01"  # unverändert
+
+    def test_change_date_keine_aktion_wenn_auto_m_false(self, tmp_path):
+        import ometha.helpers as h
+        from ometha.harvester import change_date, read_yaml_file
+        config = tmp_path / "config.yaml"
+        config.write_text("baseurl: http://test.org/\nfrom-Datum: '2020-01-01'\n")
+        h.PRM["conf_m"] = True
+        h.PRM["auto_m"] = False
+
+        change_date("2025-06-01T10:00:00Z", str(config), "from-Datum")
+
+        result = read_yaml_file(str(config), ["from-Datum"])[0]
+        assert result == "2020-01-01"  # unverändert
+
+    def test_change_date_legt_neuen_key_an(self, tmp_path):
+        from ometha.harvester import change_date, read_yaml_file
+        config = tmp_path / "config.yaml"
+        config.write_text("baseurl: http://test.org/\n")
+        self._activate_auto(config)
+
+        change_date("2025-06-01T10:00:00Z", str(config), "until-Datum")
+
+        result = read_yaml_file(str(config), ["until-Datum"])[0]
+        assert result == "2025-06-01T10:00:00Z"
+
+    def test_change_date_behaelt_andere_keys(self, tmp_path):
+        from ometha.harvester import change_date, read_yaml_file
+        config = tmp_path / "config.yaml"
+        config.write_text(
+            "baseurl: http://test.org/\nmetadataPrefix: oai_dc\nfrom-Datum: '2020-01-01'\n"
+        )
+        self._activate_auto(config)
+
+        change_date("2025-06-01T10:00:00Z", str(config), "from-Datum")
+
+        baseurl = read_yaml_file(str(config), ["baseurl"])[0]
+        assert baseurl == "http://test.org/"
+
+
+# ---------------------------------------------------------------------------
+# create_id_file() – Dateiinhalt und Wiederlesbarkeit
+# ---------------------------------------------------------------------------
+
+
+class TestCreateIdFile:
+    """Tests für harvester.create_id_file()."""
+
+    def _prm(self, tmp_path, f_date=None, u_date=None):
+        return {
+            "b_url": "http://test.org/oai",
+            "sets": None,
+            "pref": "oai_dc",
+            "dat_geb": "testDG",
+            "timeout": 0,
+            "debug": False,
+            "f_date": f_date,
+            "u_date": u_date,
+            "out_f": str(tmp_path),
+        }
+
+    def test_datei_wird_angelegt(self, tmp_path):
+        from ometha.harvester import create_id_file
+        path = create_id_file(self._prm(tmp_path), [], str(tmp_path), "successful")
+        assert os.path.exists(path)
+
+    def test_typ_successful_im_dateinamen(self, tmp_path):
+        from ometha.harvester import create_id_file
+        path = create_id_file(self._prm(tmp_path), [], str(tmp_path), "successful")
+        assert "_ometha_successful_ids.yaml" in path
+
+    def test_typ_failed_im_dateinamen(self, tmp_path):
+        from ometha.harvester import create_id_file
+        path = create_id_file(self._prm(tmp_path), [], str(tmp_path), "failed")
+        assert "_ometha_failed_ids.yaml" in path
+
+    def test_ids_wieder_lesbar(self, tmp_path):
+        from ometha.harvester import create_id_file, read_yaml_file
+        ids = ["oai:test:001", "oai:test:002"]
+        path = create_id_file(self._prm(tmp_path), ids, str(tmp_path), "successful")
+        result = read_yaml_file(path, ["ids"])[0]
+        assert "oai:test:001" in result
+        assert "oai:test:002" in result
+
+    def test_keine_ids_ergibt_leere_liste(self, tmp_path):
+        from ometha.harvester import create_id_file, read_yaml_file
+        path = create_id_file(self._prm(tmp_path), [], str(tmp_path), "successful")
+        content = open(path).read()
+        assert "ids:" in content
+
+    def test_datumswerte_im_inhalt(self, tmp_path):
+        from ometha.harvester import create_id_file
+        prm = self._prm(tmp_path, f_date="2025-01-01", u_date="2025-12-31")
+        path = create_id_file(prm, [], str(tmp_path), "successful")
+        content = open(path).read()
+        assert "fromdate: 2025-01-01" in content
+        assert "untildate: 2025-12-31" in content
+
+    def test_none_datum_als_none_string(self, tmp_path):
+        """None-Werte werden als String 'None' geschrieben – bekanntes Verhalten,
+        das zumindest konsistent und nachvollziehbar sein soll."""
+        from ometha.harvester import create_id_file
+        path = create_id_file(self._prm(tmp_path), [], str(tmp_path), "successful")
+        content = open(path).read()
+        assert "fromdate: None" in content
+
+
+# ---------------------------------------------------------------------------
+# save_file() / JSON-Konvertierungsfehler → failed_download
+# ---------------------------------------------------------------------------
+
+
+class TestJsonConversionError:
+    """JSON-Konvertierungsfehler müssen in failed_download landen, nicht stillschweigend
+    verschwinden."""
+
+    def test_json_fehler_landet_in_failed_download(
+        self, requests_mock, prm_base, tmp_path
+    ):
+        from unittest.mock import patch
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord("oai:mock:jsonerr001")]
+        mock = OAIMock(records=records)
+        mock.register(requests_mock)
+
+        prm_json = {**prm_base, "exp_type": "json", "out_f": str(tmp_path)}
+
+        with patch("ometha.harvester.xmltodict.parse", side_effect=Exception("parse error")):
+            failed_dl, failed_ids = harvest_files(
+                ["oai:mock:jsonerr001"], prm_json, str(tmp_path), session=requests.Session()
+            )
+
+        assert "oai:mock:jsonerr001" in failed_dl
+        assert len(list(tmp_path.glob("*.json"))) == 0
+
+    def test_json_fehler_erzeugt_keine_datei(
+        self, requests_mock, prm_base, tmp_path
+    ):
+        from unittest.mock import patch
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord("oai:mock:jsonerr002")]
+        mock = OAIMock(records=records)
+        mock.register(requests_mock)
+
+        prm_json = {**prm_base, "exp_type": "json", "out_f": str(tmp_path)}
+
+        with patch("ometha.harvester.xmltodict.parse", side_effect=ValueError("bad")):
+            harvest_files(
+                ["oai:mock:jsonerr002"], prm_json, str(tmp_path), session=requests.Session()
+            )
+
+        assert len(list(tmp_path.glob("*.json"))) == 0
+
+    def test_json_erfolg_nicht_in_failed(
+        self, requests_mock, prm_base, tmp_path
+    ):
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord("oai:mock:jsonok001")]
+        mock = OAIMock(records=records)
+        mock.register(requests_mock)
+
+        prm_json = {**prm_base, "exp_type": "json", "out_f": str(tmp_path)}
+        failed_dl, failed_ids = harvest_files(
+            ["oai:mock:jsonok001"], prm_json, str(tmp_path), session=requests.Session()
+        )
+
+        assert failed_dl == []
+        assert failed_ids == []
+        assert len(list(tmp_path.glob("*.json"))) == 1

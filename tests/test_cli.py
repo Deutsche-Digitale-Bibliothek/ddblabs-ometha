@@ -448,6 +448,147 @@ class TestNaturalDateViaCLI:
 
 
 # ---------------------------------------------------------------------------
+# PRM["mode"] – wird in allen Subcommands auf "cli" gesetzt
+# ---------------------------------------------------------------------------
+
+
+class TestPrmMode:
+    def test_mode_cli_default(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc"])
+        assert prm["mode"] == "cli"
+
+    def test_mode_cli_auto(self):
+        prm = parse_with(["auto", "-u", "http://x.org/?metadataPrefix=oai_dc"])
+        assert prm["mode"] == "cli"
+
+    def test_mode_cli_conf(self):
+        data = {
+            "baseurl": "http://x.org/",
+            "sets": [],
+            "metadataPrefix": "oai_dc",
+            "datengeber": "dg",
+            "timeout": 0,
+            "debug": False,
+            "outputfolder": "/tmp",
+            "from-Datum": None,
+            "until-Datum": None,
+            "fromdate": None,
+            "untildate": None,
+        }
+
+        def mock_read_yaml(path, keys, default=None):
+            return [data.get(k, default) for k in keys]
+
+        with patch("ometha.cli.read_yaml_file", side_effect=mock_read_yaml):
+            prm = parse_with(["conf", "-c", "config.yaml"])
+        assert prm["mode"] == "cli"
+
+    def test_mode_cli_ids(self):
+        data = {"baseurl": "http://x.org/", "sets": ["setA"], "metadataPrefix": "oai_dc"}
+
+        def mock_read_yaml(path, keys, default=None):
+            return [data.get(k, default) for k in keys]
+
+        with patch("ometha.cli.read_yaml_file", side_effect=mock_read_yaml):
+            prm = parse_with(["ids", "-i", "ids.yaml"])
+        assert prm["mode"] == "cli"
+
+
+# ---------------------------------------------------------------------------
+# "komplett" im default-Modus
+# ---------------------------------------------------------------------------
+
+
+class TestKomplettInDefaultMode:
+    def test_komplett_filtered_from_additive(self):
+        prm = parse_with(
+            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "komplett"]
+        )
+        assert prm["sets"][0]["additive"] == []
+
+    def test_komplett_case_insensitive(self):
+        prm = parse_with(
+            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "Komplett"]
+        )
+        assert prm["sets"][0]["additive"] == []
+
+    def test_regular_set_not_filtered(self):
+        prm = parse_with(
+            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "ddc:500"]
+        )
+        assert prm["sets"][0]["additive"] == ["ddc:500"]
+
+    def test_komplett_in_set_list_removed(self):
+        prm = parse_with(
+            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "ddc:500,komplett"]
+        )
+        assert "komplett" not in prm["sets"][0]["additive"]
+        assert "ddc:500" in prm["sets"][0]["additive"]
+
+
+# ---------------------------------------------------------------------------
+# conf-Modus: beide Datums-Key-Namen
+# ---------------------------------------------------------------------------
+
+
+class TestConfDateKeys:
+    """Conf-Modus muss sowohl "from-Datum"/"until-Datum" als auch
+    "fromdate"/"untildate" aus der YAML lesen können."""
+
+    def _parse_conf_with_yaml(self, yaml_data):
+        def mock_read_yaml(path, keys, default=None):
+            return [yaml_data.get(k, default) for k in keys]
+
+        with patch("ometha.cli.read_yaml_file", side_effect=mock_read_yaml):
+            return parse_with(["conf", "-c", "config.yaml"])
+
+    def _base_yaml(self):
+        return {
+            "baseurl": "http://x.org/",
+            "sets": [],
+            "metadataPrefix": "oai_dc",
+            "datengeber": "dg",
+            "timeout": 0,
+            "debug": False,
+            "outputfolder": "/tmp",
+            "from-Datum": None,
+            "until-Datum": None,
+            "fromdate": None,
+            "untildate": None,
+        }
+
+    def test_auto_key_from_datum(self):
+        data = {**self._base_yaml(), "from-Datum": "2025-01-01"}
+        prm = self._parse_conf_with_yaml(data)
+        assert prm["f_date"] == "2025-01-01"
+
+    def test_auto_key_until_datum(self):
+        data = {**self._base_yaml(), "until-Datum": "2025-12-31"}
+        prm = self._parse_conf_with_yaml(data)
+        assert prm["u_date"] == "2025-12-31"
+
+    def test_manual_key_fromdate(self):
+        data = {**self._base_yaml(), "fromdate": "2024-06-01"}
+        prm = self._parse_conf_with_yaml(data)
+        assert prm["f_date"] == "2024-06-01"
+
+    def test_manual_key_untildate(self):
+        data = {**self._base_yaml(), "untildate": "2024-06-30"}
+        prm = self._parse_conf_with_yaml(data)
+        assert prm["u_date"] == "2024-06-30"
+
+    def test_auto_key_takes_priority_over_manual(self):
+        data = {**self._base_yaml(), "from-Datum": "2025-01-01", "fromdate": "2020-01-01"}
+        prm = self._parse_conf_with_yaml(data)
+        assert prm["f_date"] == "2025-01-01"
+
+    def test_datetime_granularity_accepted(self):
+        data = {**self._base_yaml(), "from-Datum": "2025-06-01T10:00:00Z"}
+        prm = self._parse_conf_with_yaml(data)
+        assert prm["f_date"] == "2025-06-01T10:00:00Z"
+
+
+# ---------------------------------------------------------------------------
 # `conf` Subcommand
 # ---------------------------------------------------------------------------
 

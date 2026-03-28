@@ -177,6 +177,15 @@ def parseargs() -> dict[str, Any]:
             args.datengeber,
             args.set,
         )
+        # "komplett" aus Sets entfernen (kein Filter = vollständiges Harvesting)
+        if PRM["sets"]:
+            for set_dict in PRM["sets"]:
+                set_dict["additive"] = [
+                    s for s in set_dict["additive"] if s.lower() != "komplett"
+                ]
+                set_dict["intersection"] = [
+                    s for s in set_dict["intersection"] if s.lower() != "komplett"
+                ]
         PRM["f_date"] = _resolve_date(args.fromdate)
         PRM["u_date"] = _resolve_date(args.untildate)
         if args.fromdate and not PRM["f_date"]:
@@ -203,10 +212,14 @@ def parseargs() -> dict[str, Any]:
             PRM["conf_f"],
             ["baseurl", "sets", "metadataPrefix", "datengeber", "timeout", "debug"],
         )
-        # Datumsgrenzen aus Konfigurationsdatei lesen
-        f_date_raw, u_date_raw = read_yaml_file(
-            PRM["conf_f"], ["from-Datum", "until-Datum"]
+        # Datumsgrenzen aus Konfigurationsdatei lesen.
+        # Unterstützt beide Key-Namen: "from-Datum"/"until-Datum" (Auto-Modus)
+        # und "fromdate"/"untildate" (manuell gesetzt, wie in der Dokumentation beschrieben).
+        f_auto, f_manual, u_auto, u_manual = read_yaml_file(
+            PRM["conf_f"], ["from-Datum", "fromdate", "until-Datum", "untildate"]
         )
+        f_date_raw = f_auto or f_manual
+        u_date_raw = u_auto or u_manual
         PRM["f_date"] = _resolve_date(str(f_date_raw)) if f_date_raw else None
         PRM["u_date"] = _resolve_date(str(u_date_raw)) if u_date_raw else None
 
@@ -266,6 +279,7 @@ def parseargs() -> dict[str, Any]:
             PRM["sets"] = [{"additive": PRM["sets"], "intersection": []}]
         PRM["dat_geb"], PRM["id_f"] = args.datengeber, args.idfile
 
+    PRM["mode"] = "cli"
     return PRM
 
 

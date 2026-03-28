@@ -198,6 +198,53 @@ optional arguments:
 ```
 
 
+## Automatisierung mit Cron-Jobs
+
+Der `conf`-Modus mit `--auto` eignet sich ideal für vollautomatisches, regelmäßiges Harvesting – zum Beispiel als stündlicher oder täglicher Cron-Job. Ometha verwaltet dabei die Zeitfenster automatisch: Nach jedem Lauf wird `from-Datum` auf den aktuellen Zeitpunkt gesetzt, sodass beim nächsten Lauf exakt der neue Zeitraum geharvestet wird.
+
+### Konfigurationsdatei für automatisches Harvesting
+
+```yaml
+# /etc/ometha/sulb.yaml
+baseurl: https://digital.sulb.uni-saarland.de/viewer/oai/
+metadataPrefix: mets
+datengeber: SULB
+sets:
+  - hk
+outputfolder: /data/harvest
+timeout: 5
+debug: false
+# Wird von Ometha automatisch verwaltet (--auto):
+from-Datum: '2026-01-01T00:00:00Z'
+until-Datum: null
+```
+
+Die Schlüssel `from-Datum` und `until-Datum` werden von Ometha im Auto-Modus automatisch nach jedem Lauf aktualisiert. Alternativ können `fromdate` und `untildate` (ohne Bindestrich) für manuell gesetzte Zeitgrenzen verwendet werden.
+
+### Stündlicher Cron-Job
+
+```cron
+# Jede Stunde zur vollen Stunde – neue Records seit dem letzten Lauf harvesten
+0 * * * * ometha conf -c /etc/ometha/sulb.yaml --auto --no-log --cleanup-on-empty >> /var/log/ometha-sulb.log 2>&1
+```
+
+- `--auto`: Aktualisiert `from-Datum`/`until-Datum` in der Konfigurationsdatei automatisch
+- `--no-log`: Kein separates Logfile im Ausgabeordner (der Cron-Job leitet stdout/stderr selbst in `/var/log/ometha-sulb.log`)
+- `--cleanup-on-empty`: Leere Zeitstempel-Ordner werden gelöscht, wenn in der Periode keine neuen Records vorhanden waren – verhindert das Ansammeln leerer Verzeichnisse
+
+### Täglicher Cron-Job
+
+```cron
+# Täglich um 02:00 Uhr nachts
+0 2 * * * ometha conf -c /etc/ometha/sulb.yaml --auto --no-log --cleanup-on-empty >> /var/log/ometha-sulb.log 2>&1
+```
+
+### Hinweis zur OAI-PMH-Granularität
+
+OAI-PMH unterstützt zwei Datums-Granularitäten: `YYYY-MM-DD` (nur Datum) und `YYYY-MM-DDThh:mm:ssZ` (mit Uhrzeit). Ometha schreibt im Auto-Modus immer das vollständige Datetime-Format (`2026-03-28T10:00:00Z`). Ob eine Schnittstelle Datetime-Granularität unterstützt, steht in deren `Identify`-Response unter `granularity`. Bei reinen Datums-Schnittstellen ist ein täglicher Cron-Job sinnvoller als ein stündlicher.
+
+---
+
 ## `auto`-Modus
 
 Versucht, die Parameter aus einer kompletten OAI-URL auszulesen. Einziger Parameter ist `-u` für die URL:
