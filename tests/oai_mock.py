@@ -218,12 +218,9 @@ class OAIMock:
 
     def _handle_list_sets(self, params, context) -> str:
         if not self.sets:
-            return _error_envelope(
-                self.base_url, "noSetHierarchy", "This repository does not support sets"
-            )
+            return _error_envelope(self.base_url, "noSetHierarchy", "This repository does not support sets")
         sets_xml = "\n".join(
-            f"<set><setSpec>{spec}</setSpec><setName>{name}</setName></set>"
-            for spec, name in self.sets.items()
+            f"<set><setSpec>{spec}</setSpec><setName>{name}</setName></set>" for spec, name in self.sets.items()
         )
         return _envelope("ListSets", self.base_url, f"<ListSets>{sets_xml}</ListSets>")
 
@@ -247,13 +244,9 @@ class OAIMock:
         if set_filter:
             result = [r for r in result if set_filter in r.sets]
         if from_date:
-            result = [
-                r for r in result if date_prefix(r.datestamp) >= date_prefix(from_date)
-            ]
+            result = [r for r in result if date_prefix(r.datestamp) >= date_prefix(from_date)]
         if until_date:
-            result = [
-                r for r in result if date_prefix(r.datestamp) <= date_prefix(until_date)
-            ]
+            result = [r for r in result if date_prefix(r.datestamp) <= date_prefix(until_date)]
         return result
 
     def _make_token(self, verb: str, offset: int, params: dict) -> str:
@@ -276,18 +269,14 @@ class OAIMock:
         res_token = p("resumptionToken")
         if res_token:
             if res_token not in self._tokens:
-                return _error_envelope(
-                    self.base_url, "badResumptionToken", f"Unknown token: {res_token}"
-                )
+                return _error_envelope(self.base_url, "badResumptionToken", f"Unknown token: {res_token}")
             token_data = self._tokens[res_token]
             offset = token_data["offset"]
             orig_params = token_data["params"]
         else:
             prefix = p("metadataPrefix")
             if not prefix:
-                return _error_envelope(
-                    self.base_url, "badArgument", "metadataPrefix is required"
-                )
+                return _error_envelope(self.base_url, "badArgument", "metadataPrefix is required")
             if prefix not in self.metadata_formats:
                 return _error_envelope(
                     self.base_url,
@@ -301,9 +290,7 @@ class OAIMock:
         total = len(all_records)
 
         if total == 0:
-            return _error_envelope(
-                self.base_url, "noRecordsMatch", "No records match the given criteria"
-            )
+            return _error_envelope(self.base_url, "noRecordsMatch", "No records match the given criteria")
 
         page = all_records[offset : offset + self.page_size]
         next_offset = offset + self.page_size
@@ -317,13 +304,10 @@ class OAIMock:
         if next_offset < total:
             new_token = self._make_token(verb, next_offset, orig_params)
             resumption_xml = (
-                f'<resumptionToken completeListSize="{total}" cursor="{offset}">'
-                f"{new_token}</resumptionToken>"
+                f'<resumptionToken completeListSize="{total}" cursor="{offset}">{new_token}</resumptionToken>'
             )
         else:
-            resumption_xml = (
-                f'<resumptionToken completeListSize="{total}" cursor="{offset}"/>'
-            )
+            resumption_xml = f'<resumptionToken completeListSize="{total}" cursor="{offset}"/>'
 
         body = f"<{verb}>\n{items_xml}\n{resumption_xml}\n</{verb}>"
         return _envelope(verb, self.base_url, body)
@@ -344,9 +328,7 @@ class OAIMock:
 
         record = next((r for r in self.records if r.identifier == identifier), None)
         if not record:
-            return _error_envelope(
-                self.base_url, "idDoesNotExist", f"No record with id: {identifier}"
-            )
+            return _error_envelope(self.base_url, "idDoesNotExist", f"No record with id: {identifier}")
 
         body = f"<GetRecord>{record.record_xml()}</GetRecord>"
         return _envelope("GetRecord", self.base_url, body)

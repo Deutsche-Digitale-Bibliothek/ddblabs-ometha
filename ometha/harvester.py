@@ -79,14 +79,10 @@ def get_identifier(
                 if retry_count >= max_retries:
                     # Save the last resumption token before exiting
                     if last_token:
-                        token_file = os.path.join(
-                            PRM.get("out_f", "."), f"resumption_token_{TIMESTR}.txt"
-                        )
+                        token_file = os.path.join(PRM.get("out_f", "."), f"resumption_token_{TIMESTR}.txt")
                         try:
                             with open(token_file, "w") as f:
-                                f.write(
-                                    f"Resume with: --resumptiontoken {last_token}\n"
-                                )
+                                f.write(f"Resume with: --resumptiontoken {last_token}\n")
                                 f.write(f"Last successful count: {len(id_list)} IDs\n")
                                 f.write(f"Token: {last_token}\n")
                             print(f"\n{INFO}Resumption token saved to: {token_file}")
@@ -96,15 +92,9 @@ def get_identifier(
                     spinner.stop()
                     handle_error(e, PRM["mode"], url)
                 else:
-                    wait_time = 10 * (
-                        2**retry_count
-                    )  # Exponential backoff: 20s, 40s, 80s
-                    print(
-                        f"\n{ACHTUNG}Retry {retry_count}/{max_retries} after {wait_time}s due to error..."
-                    )
-                    logger.warning(
-                        f"Retrying after {wait_time}s (attempt {retry_count}/{max_retries})"
-                    )
+                    wait_time = 10 * (2**retry_count)  # Exponential backoff: 20s, 40s, 80s
+                    print(f"\n{ACHTUNG}Retry {retry_count}/{max_retries} after {wait_time}s due to error...")
+                    logger.warning(f"Retrying after {wait_time}s (attempt {retry_count}/{max_retries})")
                     time.sleep(wait_time)
                     continue
 
@@ -134,9 +124,7 @@ def get_identifier(
 
         # Periodically save resumption token for recovery
         if token and len(id_list) % token_save_interval == 0:
-            token_file = os.path.join(
-                PRM.get("out_f", "."), "resumption_token_latest.txt"
-            )
+            token_file = os.path.join(PRM.get("out_f", "."), "resumption_token_latest.txt")
             try:
                 with open(token_file, "w") as f:
                     f.write(f"Resume with: --resumptiontoken {token}\n")
@@ -144,18 +132,14 @@ def get_identifier(
                     f.write(f"Token: {token}\n")
                 logger.info(f"Saved checkpoint at {len(id_list)} IDs")
             except Exception as save_err:
-                logger.warning(
-                    f"Could not save resumption token checkpoint: {save_err}"
-                )
+                logger.warning(f"Could not save resumption token checkpoint: {save_err}")
 
         # URL für nächste Suche zusammenbauen, wenn kein Token (== letzte Seite) loop beenden
         if not token:
             break
         url = f"{PRM['b_url']}?verb=ListIdentifiers&resumptionToken={token}"
 
-    spinner.text = (
-        f"Identifier Harvesting beendet. Insgesamt {len(id_list)} IDs bekommen."
-    )
+    spinner.text = f"Identifier Harvesting beendet. Insgesamt {len(id_list)} IDs bekommen."
     spinner.ok("✓")
     logger.info(f"Letzte abgefragte URL: {PRM['b_url']}")
     logger.info("Identifier Harvesting beendet.")
@@ -163,9 +147,7 @@ def get_identifier(
     return id_list
 
 
-def harvest_files(
-    ids: list[str], PRM: dict[str, Any], folder: str, session: Session
-) -> tuple[list[str], list[str]]:
+def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Session) -> tuple[list[str], list[str]]:
     """
     Liest ID Liste und lädt die IDs einzeln über GetRecord.
     :param ids: List of IDs
@@ -185,17 +167,13 @@ def harvest_files(
         """
         filename = re.sub(r"([:.|&%$=()\"#+\'´`*~<>!?/;,\[\]]|\s)", "_", oai_id)
         if export_type == "xml":
-            with open(
-                os.path.join(folder, f"{filename}.xml"), "w", encoding="utf8"
-            ) as of:
+            with open(os.path.join(folder, f"{filename}.xml"), "w", encoding="utf8") as of:
                 of.write(response)
             return True
         elif export_type == "json":
             try:
                 xml_data = xmltodict.parse(response)
-                with open(
-                    os.path.join(folder, f"{filename}.json"), "w", encoding="utf8"
-                ) as of:
+                with open(os.path.join(folder, f"{filename}.json"), "w", encoding="utf8") as of:
                     json.dump(xml_data, of, indent=2)
                 return True
             except Exception as e:
@@ -203,15 +181,11 @@ def harvest_files(
                 return False
         else:
             # TODO this check should be done before the harvesting starts
-            with open(
-                os.path.join(folder, f"{filename}.xml"), "w", encoding="utf8"
-            ) as of:
+            with open(os.path.join(folder, f"{filename}.xml"), "w", encoding="utf8") as of:
                 of.write(response)
             return True
 
-    def get_response_text_from_url(
-        url: str, session: Session, folder: str, export_type: str
-    ) -> dict[str, str] | None:
+    def get_response_text_from_url(url: str, session: Session, folder: str, export_type: str) -> dict[str, str] | None:
         """
         Downloads the content from the given URL and saves it to a file.
 
@@ -231,33 +205,20 @@ def harvest_files(
                     logger.critical(f"Statuscode {resp.status_code} bei {url}")
                     return {"failed_download": oai_id}
                 if errors := re.findall(r'error\scode="(.+)">(.+)</error>', resp.text):
-                    logger.warning(
-                        f"Datei {url} konnte nicht geharvestet werden ('{errors[0][0]}')"
-                    )
+                    logger.warning(f"Datei {url} konnte nicht geharvestet werden ('{errors[0][0]}')")
                     return {"failed_download": oai_id}
                 if not save_file(oai_id, folder, resp.text, export_type):
                     return {"failed_download": oai_id}
         except RequestException as e:
-            logger.warning(
-                f"Datei {url} wurde aufgrund eines {type(e).__name__} übersprungen: {e}"
-            )
+            logger.warning(f"Datei {url} wurde aufgrund eines {type(e).__name__} übersprungen: {e}")
             return {"failed_id": oai_id}
 
     if ids:
         print_and_log(f"{SEP_LINE}Harveste {len(ids)} IDs.", logger, "info")
     else:
-        log_critical_and_print_and_exit(
-            f"{SEP_LINE}Keine Identifier bekommen, breche ab.", PRM["mode"]
-        )
+        log_critical_and_print_and_exit(f"{SEP_LINE}Keine Identifier bekommen, breche ab.", PRM["mode"])
 
-    urls = [
-        PRM["b_url"]
-        + "?verb=GetRecord&metadataPrefix="
-        + PRM["pref"]
-        + "&identifier="
-        + str(id)
-        for id in ids
-    ]
+    urls = [PRM["b_url"] + "?verb=GetRecord&metadataPrefix=" + PRM["pref"] + "&identifier=" + str(id) for id in ids]
 
     with ThreadPool(PRM["n_procs"]) as pool:
         failed_oaiids = list(
@@ -309,9 +270,7 @@ def change_date(date: str, name: str, key: str) -> None:
             yaml.safe_dump(doc, f, default_flow_style=False, sort_keys=False)
 
 
-def create_id_file(
-    PRM: dict[str, Any], ids: list[str], folder: str, type: str | None = None
-) -> str:
+def create_id_file(PRM: dict[str, Any], ids: list[str], folder: str, type: str | None = None) -> str:
     """
     Create an ID file with the given parameters.
 
@@ -358,11 +317,7 @@ def read_yaml_file(file_path: str, keys: list[str], default: Any = None) -> list
                 result.append(value)
             return result
     except OSError:
-        log_critical_and_print_and_exit(
-            f"\n{FEHLER} Datei {file_path} kann nicht gelesen werden."
-        )
+        log_critical_and_print_and_exit(f"\n{FEHLER} Datei {file_path} kann nicht gelesen werden.")
         sys.exit()
     except KeyError as e:
-        log_critical_and_print_and_exit(
-            f"Der Eintrag für {e} fehlt in der YAML Datei {file_path}."
-        )
+        log_critical_and_print_and_exit(f"Der Eintrag für {e} fehlt in der YAML Datei {file_path}.")

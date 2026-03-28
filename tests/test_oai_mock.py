@@ -213,9 +213,7 @@ class TestGetRecord:
         mock = OAIMock(records=records)
         mock.register(requests_mock)
 
-        resp = requests.get(
-            f"{BASE_URL}?verb=GetRecord&metadataPrefix=oai_dc&identifier=oai:mock:001"
-        )
+        resp = requests.get(f"{BASE_URL}?verb=GetRecord&metadataPrefix=oai_dc&identifier=oai:mock:001")
         assert resp.status_code == 200
         assert "<GetRecord>" in resp.text
         assert "oai:mock:001" in resp.text
@@ -224,9 +222,7 @@ class TestGetRecord:
         mock = OAIMock(records=[])
         mock.register(requests_mock)
 
-        resp = requests.get(
-            f"{BASE_URL}?verb=GetRecord&metadataPrefix=oai_dc&identifier=oai:does:not:exist"
-        )
+        resp = requests.get(f"{BASE_URL}?verb=GetRecord&metadataPrefix=oai_dc&identifier=oai:does:not:exist")
         assert 'code="idDoesNotExist"' in resp.text
 
     def test_get_record_missing_args(self, requests_mock):
@@ -241,9 +237,7 @@ class TestGetRecord:
         mock = OAIMock(records=records)
         mock.register(requests_mock)
 
-        resp = requests.get(
-            f"{BASE_URL}?verb=GetRecord&metadataPrefix=oai_dc&identifier=oai:mock:deleted"
-        )
+        resp = requests.get(f"{BASE_URL}?verb=GetRecord&metadataPrefix=oai_dc&identifier=oai:mock:deleted")
         assert 'status="deleted"' in resp.text
         # Deleted records haben kein <metadata>
         assert "<metadata>" not in resp.text
@@ -310,9 +304,7 @@ class TestErrors:
         mock = OAIMock()
         mock.register(requests_mock)
 
-        resp = requests.get(
-            f"{BASE_URL}?verb=ListIdentifiers&resumptionToken=invalidtoken999"
-        )
+        resp = requests.get(f"{BASE_URL}?verb=ListIdentifiers&resumptionToken=invalidtoken999")
         assert 'code="badResumptionToken"' in resp.text
 
 
@@ -465,9 +457,7 @@ class Test503Retry:
         mock = OAIMock.with_dc_records(3, simulate_503=True)
         mock.register(requests_mock)
 
-        statuses = [
-            requests.get(f"{BASE_URL}?verb=Identify").status_code for _ in range(4)
-        ]
+        statuses = [requests.get(f"{BASE_URL}?verb=Identify").status_code for _ in range(4)]
         assert statuses[0] == 503
         assert all(s == 200 for s in statuses[1:])
 
@@ -499,18 +489,14 @@ class TestHarvestFiles:
         mock.register(requests_mock)
 
         ids = [r.identifier for r in records]
-        failed_dl, failed_ids = harvest_files(
-            ids, prm_base, str(tmp_path), session=requests.Session()
-        )
+        failed_dl, failed_ids = harvest_files(ids, prm_base, str(tmp_path), session=requests.Session())
 
         xml_files = list(tmp_path.glob("*.xml"))
         assert len(xml_files) == 5
         assert failed_dl == []
         assert failed_ids == []
 
-    def test_nonexistent_id_goes_to_failed_download(
-        self, requests_mock, prm_base, tmp_path
-    ):
+    def test_nonexistent_id_goes_to_failed_download(self, requests_mock, prm_base, tmp_path):
         from ometha.harvester import harvest_files
 
         records = [OAIRecord("oai:mock:exists")]
@@ -518,9 +504,7 @@ class TestHarvestFiles:
         mock.register(requests_mock)
 
         ids = ["oai:mock:exists", "oai:mock:doesnotexist"]
-        failed_dl, failed_ids = harvest_files(
-            ids, prm_base, str(tmp_path), session=requests.Session()
-        )
+        failed_dl, failed_ids = harvest_files(ids, prm_base, str(tmp_path), session=requests.Session())
 
         xml_files = list(tmp_path.glob("*.xml"))
         assert len(xml_files) == 1
@@ -534,25 +518,19 @@ class TestHarvestFiles:
         mock.register(requests_mock)
 
         prm_json = {**prm_base, "exp_type": "json"}
-        harvest_files(
-            ["oai:mock:json001"], prm_json, str(tmp_path), session=requests.Session()
-        )
+        harvest_files(["oai:mock:json001"], prm_json, str(tmp_path), session=requests.Session())
 
         json_files = list(tmp_path.glob("*.json"))
         assert len(json_files) == 1
 
-    def test_deleted_record_goes_to_failed_download(
-        self, requests_mock, prm_base, tmp_path
-    ):
+    def test_deleted_record_goes_to_failed_download(self, requests_mock, prm_base, tmp_path):
         from ometha.harvester import harvest_files
 
         records = [OAIRecord("oai:mock:deleted", deleted=True)]
         mock = OAIMock(records=records)
         mock.register(requests_mock)
 
-        failed_dl, failed_ids = harvest_files(
-            ["oai:mock:deleted"], prm_base, str(tmp_path), session=requests.Session()
-        )
+        failed_dl, failed_ids = harvest_files(["oai:mock:deleted"], prm_base, str(tmp_path), session=requests.Session())
 
         # Deleted records liefern kein <metadata> → Ometha behandelt als failed
         xml_files = list(tmp_path.glob("*.xml"))
@@ -572,9 +550,7 @@ class TestDatefilterEdgeCases:
         mock = OAIMock(records=records)
         mock.register(requests_mock)
 
-        resp = requests.get(
-            f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc&from=2024-03-15"
-        )
+        resp = requests.get(f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc&from=2024-03-15")
         assert "oai:mock:boundary" in resp.text
 
     def test_exact_until_boundary_included(self, requests_mock):
@@ -582,9 +558,7 @@ class TestDatefilterEdgeCases:
         mock = OAIMock(records=records)
         mock.register(requests_mock)
 
-        resp = requests.get(
-            f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc&until=2024-03-15"
-        )
+        resp = requests.get(f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc&until=2024-03-15")
         assert "oai:mock:boundary" in resp.text
 
     def test_from_after_all_records_returns_no_match(self, requests_mock):
@@ -592,9 +566,7 @@ class TestDatefilterEdgeCases:
         mock = OAIMock(records=records)
         mock.register(requests_mock)
 
-        resp = requests.get(
-            f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc&from=2025-01-01"
-        )
+        resp = requests.get(f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc&from=2025-01-01")
         assert 'code="noRecordsMatch"' in resp.text
 
     def test_until_before_all_records_returns_no_match(self, requests_mock):
@@ -602,9 +574,7 @@ class TestDatefilterEdgeCases:
         mock = OAIMock(records=records)
         mock.register(requests_mock)
 
-        resp = requests.get(
-            f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc&until=2019-12-31"
-        )
+        resp = requests.get(f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc&until=2019-12-31")
         assert 'code="noRecordsMatch"' in resp.text
 
     def test_from_and_until_range(self, requests_mock):
@@ -616,10 +586,7 @@ class TestDatefilterEdgeCases:
         mock = OAIMock(records=records)
         mock.register(requests_mock)
 
-        resp = requests.get(
-            f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc"
-            f"&from=2023-01-01&until=2024-01-01"
-        )
+        resp = requests.get(f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc&from=2023-01-01&until=2024-01-01")
         assert "oai:mock:inside" in resp.text
         assert "oai:mock:before" not in resp.text
         assert "oai:mock:after" not in resp.text
@@ -633,9 +600,7 @@ class TestDatefilterEdgeCases:
         mock = OAIMock(records=records)
         mock.register(requests_mock)
 
-        resp = requests.get(
-            f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc&from=2024-05-01"
-        )
+        resp = requests.get(f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc&from=2024-05-01")
         assert "oai:mock:dateonly" in resp.text
         assert "oai:mock:datetime" in resp.text
 
@@ -659,9 +624,7 @@ class TestTimeoutHandling:
     # harvest_files(): einzelne IDs mit Netzwerkproblemen
     # ------------------------------------------------------------------
 
-    def test_timeout_bei_einzelner_id_geht_in_failed_ids(
-        self, requests_mock, prm_base, tmp_path
-    ):
+    def test_timeout_bei_einzelner_id_geht_in_failed_ids(self, requests_mock, prm_base, tmp_path):
         """Timeout bei GetRecord → ID landet in failed_ids, kein Absturz."""
         from ometha.harvester import harvest_files
 
@@ -687,9 +650,7 @@ class TestTimeoutHandling:
         xml_files = list(tmp_path.glob("*.xml"))
         assert len(xml_files) == 1
 
-    def test_connection_error_geht_in_failed_ids(
-        self, requests_mock, prm_base, tmp_path
-    ):
+    def test_connection_error_geht_in_failed_ids(self, requests_mock, prm_base, tmp_path):
         """ConnectionError bei GetRecord → ID landet in failed_ids."""
         from ometha.harvester import harvest_files
 
@@ -726,9 +687,7 @@ class TestTimeoutHandling:
             )
 
         ids = [f"oai:mock:{i:03d}" for i in range(3)]
-        failed_dl, failed_ids = harvest_files(
-            ids, prm_base, str(tmp_path), session=requests.Session()
-        )
+        failed_dl, failed_ids = harvest_files(ids, prm_base, str(tmp_path), session=requests.Session())
 
         assert len(failed_ids) == 3
         assert len(list(tmp_path.glob("*.xml"))) == 0
@@ -745,9 +704,7 @@ class TestTimeoutHandling:
             status_code=500,
         )
 
-        failed_dl, failed_ids = harvest_files(
-            ["oai:mock:500"], prm_base, str(tmp_path), session=requests.Session()
-        )
+        failed_dl, failed_ids = harvest_files(["oai:mock:500"], prm_base, str(tmp_path), session=requests.Session())
 
         assert "oai:mock:500" in failed_dl
         assert failed_ids == []
@@ -804,9 +761,7 @@ class TestTimeoutHandling:
 
         assert len(ids) == 5
 
-    def test_alle_retries_erschoepft_endet_mit_exit(
-        self, requests_mock, session, prm_base, tmp_path
-    ):
+    def test_alle_retries_erschoepft_endet_mit_exit(self, requests_mock, session, prm_base, tmp_path):
         """
         Alle 3 Retry-Versuche schlagen fehl → sys.exit() wird gerufen.
         time.sleep wird gemockt um 20s+40s+80s Wartezeit zu vermeiden.
@@ -822,9 +777,7 @@ class TestTimeoutHandling:
             with pytest.raises(SystemExit):
                 get_identifier(prm_base, url, session)
 
-    def test_resumption_token_wird_bei_timeout_gespeichert(
-        self, requests_mock, session, prm_base, tmp_path
-    ):
+    def test_resumption_token_wird_bei_timeout_gespeichert(self, requests_mock, session, prm_base, tmp_path):
         """
         Timeout auf Seite 2 → der zuletzt erfolgreiche ResumptionToken
         wird als Datei gespeichert.
@@ -866,15 +819,18 @@ class TestChangeDateYaml:
 
     def setup_method(self):
         import ometha.helpers as h
+
         self._saved = {k: h.PRM[k] for k in ("conf_m", "auto_m", "conf_f")}
 
     def teardown_method(self):
         import ometha.helpers as h
+
         for k, v in self._saved.items():
             h.PRM[k] = v
 
     def _activate_auto(self, path):
         import ometha.helpers as h
+
         h.PRM["conf_m"] = True
         h.PRM["auto_m"] = True
         h.PRM["conf_f"] = str(path)
@@ -882,6 +838,7 @@ class TestChangeDateYaml:
     def test_change_date_schreibt_from_datum(self, tmp_path):
         import yaml
         from ometha.harvester import change_date, read_yaml_file
+
         config = tmp_path / "config.yaml"
         config.write_text("baseurl: http://test.org/\nfrom-Datum: '2020-01-01'\n")
         self._activate_auto(config)
@@ -893,6 +850,7 @@ class TestChangeDateYaml:
 
     def test_change_date_schreibt_until_datum(self, tmp_path):
         from ometha.harvester import change_date, read_yaml_file
+
         config = tmp_path / "config.yaml"
         config.write_text("baseurl: http://test.org/\n")
         self._activate_auto(config)
@@ -905,6 +863,7 @@ class TestChangeDateYaml:
     def test_change_date_keine_aktion_wenn_conf_m_false(self, tmp_path):
         import ometha.helpers as h
         from ometha.harvester import change_date, read_yaml_file
+
         config = tmp_path / "config.yaml"
         config.write_text("baseurl: http://test.org/\nfrom-Datum: '2020-01-01'\n")
         h.PRM["conf_m"] = False
@@ -918,6 +877,7 @@ class TestChangeDateYaml:
     def test_change_date_keine_aktion_wenn_auto_m_false(self, tmp_path):
         import ometha.helpers as h
         from ometha.harvester import change_date, read_yaml_file
+
         config = tmp_path / "config.yaml"
         config.write_text("baseurl: http://test.org/\nfrom-Datum: '2020-01-01'\n")
         h.PRM["conf_m"] = True
@@ -930,6 +890,7 @@ class TestChangeDateYaml:
 
     def test_change_date_legt_neuen_key_an(self, tmp_path):
         from ometha.harvester import change_date, read_yaml_file
+
         config = tmp_path / "config.yaml"
         config.write_text("baseurl: http://test.org/\n")
         self._activate_auto(config)
@@ -941,10 +902,9 @@ class TestChangeDateYaml:
 
     def test_change_date_behaelt_andere_keys(self, tmp_path):
         from ometha.harvester import change_date, read_yaml_file
+
         config = tmp_path / "config.yaml"
-        config.write_text(
-            "baseurl: http://test.org/\nmetadataPrefix: oai_dc\nfrom-Datum: '2020-01-01'\n"
-        )
+        config.write_text("baseurl: http://test.org/\nmetadataPrefix: oai_dc\nfrom-Datum: '2020-01-01'\n")
         self._activate_auto(config)
 
         change_date("2025-06-01T10:00:00Z", str(config), "from-Datum")
@@ -976,21 +936,25 @@ class TestCreateIdFile:
 
     def test_datei_wird_angelegt(self, tmp_path):
         from ometha.harvester import create_id_file
+
         path = create_id_file(self._prm(tmp_path), [], str(tmp_path), "successful")
         assert os.path.exists(path)
 
     def test_typ_successful_im_dateinamen(self, tmp_path):
         from ometha.harvester import create_id_file
+
         path = create_id_file(self._prm(tmp_path), [], str(tmp_path), "successful")
         assert "_ometha_successful_ids.yaml" in path
 
     def test_typ_failed_im_dateinamen(self, tmp_path):
         from ometha.harvester import create_id_file
+
         path = create_id_file(self._prm(tmp_path), [], str(tmp_path), "failed")
         assert "_ometha_failed_ids.yaml" in path
 
     def test_ids_wieder_lesbar(self, tmp_path):
         from ometha.harvester import create_id_file, read_yaml_file
+
         ids = ["oai:test:001", "oai:test:002"]
         path = create_id_file(self._prm(tmp_path), ids, str(tmp_path), "successful")
         result = read_yaml_file(path, ["ids"])[0]
@@ -999,12 +963,14 @@ class TestCreateIdFile:
 
     def test_keine_ids_ergibt_leere_liste(self, tmp_path):
         from ometha.harvester import create_id_file, read_yaml_file
+
         path = create_id_file(self._prm(tmp_path), [], str(tmp_path), "successful")
         content = open(path).read()
         assert "ids:" in content
 
     def test_datumswerte_im_inhalt(self, tmp_path):
         from ometha.harvester import create_id_file
+
         prm = self._prm(tmp_path, f_date="2025-01-01", u_date="2025-12-31")
         path = create_id_file(prm, [], str(tmp_path), "successful")
         content = open(path).read()
@@ -1015,6 +981,7 @@ class TestCreateIdFile:
         """None-Werte werden als String 'None' geschrieben – bekanntes Verhalten,
         das zumindest konsistent und nachvollziehbar sein soll."""
         from ometha.harvester import create_id_file
+
         path = create_id_file(self._prm(tmp_path), [], str(tmp_path), "successful")
         content = open(path).read()
         assert "fromdate: None" in content
@@ -1029,9 +996,7 @@ class TestJsonConversionError:
     """JSON-Konvertierungsfehler müssen in failed_download landen, nicht stillschweigend
     verschwinden."""
 
-    def test_json_fehler_landet_in_failed_download(
-        self, requests_mock, prm_base, tmp_path
-    ):
+    def test_json_fehler_landet_in_failed_download(self, requests_mock, prm_base, tmp_path):
         from unittest.mock import patch
         from ometha.harvester import harvest_files
 
@@ -1049,9 +1014,7 @@ class TestJsonConversionError:
         assert "oai:mock:jsonerr001" in failed_dl
         assert len(list(tmp_path.glob("*.json"))) == 0
 
-    def test_json_fehler_erzeugt_keine_datei(
-        self, requests_mock, prm_base, tmp_path
-    ):
+    def test_json_fehler_erzeugt_keine_datei(self, requests_mock, prm_base, tmp_path):
         from unittest.mock import patch
         from ometha.harvester import harvest_files
 
@@ -1062,15 +1025,11 @@ class TestJsonConversionError:
         prm_json = {**prm_base, "exp_type": "json", "out_f": str(tmp_path)}
 
         with patch("ometha.harvester.xmltodict.parse", side_effect=ValueError("bad")):
-            harvest_files(
-                ["oai:mock:jsonerr002"], prm_json, str(tmp_path), session=requests.Session()
-            )
+            harvest_files(["oai:mock:jsonerr002"], prm_json, str(tmp_path), session=requests.Session())
 
         assert len(list(tmp_path.glob("*.json"))) == 0
 
-    def test_json_erfolg_nicht_in_failed(
-        self, requests_mock, prm_base, tmp_path
-    ):
+    def test_json_erfolg_nicht_in_failed(self, requests_mock, prm_base, tmp_path):
         from ometha.harvester import harvest_files
 
         records = [OAIRecord("oai:mock:jsonok001")]

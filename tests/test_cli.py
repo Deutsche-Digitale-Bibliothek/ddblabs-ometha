@@ -125,9 +125,7 @@ class TestDefaultCommand:
         assert prm["pref"] == "mods"
 
     def test_datengeber_short(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-d", "meinDG"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-d", "meinDG"])
         assert prm["dat_geb"] == "meinDG"
 
     def test_datengeber_long(self):
@@ -151,27 +149,19 @@ class TestDefaultCommand:
         assert len(prm["dat_geb"]) > 0
 
     def test_fromdate_valid(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "2023-06-01"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "2023-06-01"])
         assert prm["f_date"] == "2023-06-01"
 
     def test_fromdate_invalid_is_none(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "not-a-date"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "not-a-date"])
         assert prm["f_date"] is None
 
     def test_untildate_valid(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-u", "2024-12-31"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-u", "2024-12-31"])
         assert prm["u_date"] == "2024-12-31"
 
     def test_untildate_invalid_is_none(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-u", "31.12.2024"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-u", "31.12.2024"])
         assert prm["u_date"] is None
 
     def test_fromdate_and_untildate_together(self):
@@ -210,9 +200,7 @@ class TestDefaultCommand:
         assert prm["res_tok"] is None
 
     def test_set_single(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "ddc:500"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "ddc:500"])
         assert prm["sets"] is not None
         # -s liefert eine Liste von dicts
         sets = prm["sets"]
@@ -220,15 +208,11 @@ class TestDefaultCommand:
         assert sets[0]["additive"] == ["ddc:500"]
 
     def test_set_multiple(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "setA,setB"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "setA,setB"])
         assert prm["sets"][0]["additive"] == ["setA", "setB"]
 
     def test_set_with_intersection(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "setA/setB"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "setA/setB"])
         assert prm["sets"][0]["additive"] == ["setA"]
         assert prm["sets"][0]["intersection"] == ["setB"]
 
@@ -257,9 +241,7 @@ class TestDefaultCommand:
         assert prm["timeout"] == 0
 
     def test_outputfolder_short(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-o", "/tmp/myfolder"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-o", "/tmp/myfolder"])
         assert prm["out_f"] == "/tmp/myfolder"
 
     def test_outputfolder_default_is_cwd(self):
@@ -267,9 +249,7 @@ class TestDefaultCommand:
         assert prm["out_f"] == os.getcwd()
 
     def test_exporttype_json(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-e", "json"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-e", "json"])
         assert prm["exp_type"] == "json"
 
     def test_exporttype_default_xml(self):
@@ -398,52 +378,38 @@ class TestNaturalDateViaCLI:
     """Integrationstests: natürlichsprachige Datumsangaben über CLI."""
 
     def test_fromdate_natural_days(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "1d"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "1d"])
         assert prm["f_date"] is not None
         assert re.match(ISODATEREGEX, prm["f_date"])
         expected = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
         assert prm["f_date"] == expected
 
     def test_fromdate_natural_hours(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "6h"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "6h"])
         assert prm["f_date"] is not None
         assert re.match(ISODATEREGEX, prm["f_date"])
 
     def test_fromdate_natural_minutes(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "20m"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "20m"])
         assert prm["f_date"] is not None
         assert re.match(ISODATEREGEX, prm["f_date"])
 
     def test_untildate_natural_weeks(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-u", "2w"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-u", "2w"])
         assert prm["u_date"] is not None
         assert re.match(ISODATEREGEX, prm["u_date"])
 
     def test_untildate_natural_months(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-u", "1mo"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-u", "1mo"])
         assert prm["u_date"] is not None
         assert re.match(ISODATEREGEX, prm["u_date"])
 
     def test_iso_date_still_works(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "2024-01-15"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "2024-01-15"])
         assert prm["f_date"] == "2024-01-15"
 
     def test_invalid_date_still_none(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "gestern"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "gestern"])
         assert prm["f_date"] is None
 
 
@@ -501,27 +467,19 @@ class TestPrmMode:
 
 class TestKomplettInDefaultMode:
     def test_komplett_filtered_from_additive(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "komplett"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "komplett"])
         assert prm["sets"][0]["additive"] == []
 
     def test_komplett_case_insensitive(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "Komplett"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "Komplett"])
         assert prm["sets"][0]["additive"] == []
 
     def test_regular_set_not_filtered(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "ddc:500"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "ddc:500"])
         assert prm["sets"][0]["additive"] == ["ddc:500"]
 
     def test_komplett_in_set_list_removed(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "ddc:500,komplett"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "ddc:500,komplett"])
         assert "komplett" not in prm["sets"][0]["additive"]
         assert "ddc:500" in prm["sets"][0]["additive"]
 
@@ -888,9 +846,7 @@ class TestAutoCommand:
 
     def test_base_url_path_preserved(self):
         """Pfadkomponenten der URL sollen erhalten bleiben."""
-        prm = parse_with(
-            ["auto", "-u", "http://oai.example.org/oai/request?metadataPrefix=oai_dc"]
-        )
+        prm = parse_with(["auto", "-u", "http://oai.example.org/oai/request?metadataPrefix=oai_dc"])
         assert prm["b_url"] == "http://oai.example.org/oai/request"
 
 

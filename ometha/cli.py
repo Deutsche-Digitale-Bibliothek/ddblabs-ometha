@@ -7,7 +7,7 @@ from urllib.parse import parse_qs, urlparse
 
 from ._version import __version__
 from .harvester import read_yaml_file
-from .helpers import ISODATEREGEX, OAITIMESTR, PRM, SEP_LINE, TIMESTR, parse_natural_date
+from .helpers import ISODATEREGEX, PRM, SEP_LINE, TIMESTR, parse_natural_date
 
 
 def _resolve_date(value: str | None) -> str | None:
@@ -45,18 +45,14 @@ def parseargs() -> dict[str, Any]:
             help="Timeout between requests in seconds (default: 0)",
             default=0,
         )
-        s.add_argument(
-            "--outputfolder", "-o", help="Output folder", default=os.getcwd()
-        )
+        s.add_argument("--outputfolder", "-o", help="Output folder", default=os.getcwd())
         s.add_argument(
             "--debug",
             dest="debug",
             help="Print ListIdentifiers output",
             action="store_true",
         )
-        s.add_argument(
-            "--exporttype", "-e", help="Export format (xml/json)", default="xml"
-        )
+        s.add_argument("--exporttype", "-e", help="Export format (xml/json)", default="xml")
 
     def convert_common_args(args):
         PRM["timeout"], PRM["n_procs"], PRM["out_f"], PRM["debug"], PRM["exp_type"] = (
@@ -96,15 +92,9 @@ def parseargs() -> dict[str, Any]:
                 "--resumptiontoken",
                 help="Resume harvesting with resumptionToken. Requires -d option.",
             )
-            prs.add_argument(
-                "--baseurl", "-b", required=True, help="URL of the OAI interface"
-            )
-            prs.add_argument(
-                "--metadataprefix", "-m", required=True, help="Metadata Prefix"
-            )
-            prs.add_argument(
-                "--datengeber", "-d", default=TIMESTR, help="Datengeber (Folder name)"
-            )
+            prs.add_argument("--baseurl", "-b", required=True, help="URL of the OAI interface")
+            prs.add_argument("--metadataprefix", "-m", required=True, help="Metadata Prefix")
+            prs.add_argument("--datengeber", "-d", default=TIMESTR, help="Datengeber (Folder name)")
             prs.add_argument(
                 "--set",
                 "-s",
@@ -159,12 +149,8 @@ def parseargs() -> dict[str, Any]:
             prs.add_argument("--url", "-u", required=True, help="URL")
         elif cmd == "ids":
             add_common_args(prs)
-            prs.add_argument(
-                "--idfile", "-i", required=True, help="Path to ID YAML File"
-            )
-            prs.add_argument(
-                "--datengeber", "-d", default=TIMESTR, help="Datengeber (Folder name)"
-            )
+            prs.add_argument("--idfile", "-i", required=True, help="Path to ID YAML File")
+            prs.add_argument("--datengeber", "-d", default=TIMESTR, help="Datengeber (Folder name)")
 
     args = toplevelparser.parse_args()
 
@@ -180,12 +166,8 @@ def parseargs() -> dict[str, Any]:
         # "komplett" aus Sets entfernen (kein Filter = vollständiges Harvesting)
         if PRM["sets"]:
             for set_dict in PRM["sets"]:
-                set_dict["additive"] = [
-                    s for s in set_dict["additive"] if s.lower() != "komplett"
-                ]
-                set_dict["intersection"] = [
-                    s for s in set_dict["intersection"] if s.lower() != "komplett"
-                ]
+                set_dict["additive"] = [s for s in set_dict["additive"] if s.lower() != "komplett"]
+                set_dict["intersection"] = [s for s in set_dict["intersection"] if s.lower() != "komplett"]
         PRM["f_date"] = _resolve_date(args.fromdate)
         PRM["u_date"] = _resolve_date(args.untildate)
         if args.fromdate and not PRM["f_date"]:
@@ -270,9 +252,7 @@ def parseargs() -> dict[str, Any]:
         PRM["dat_geb"] = time.strftime("%Y%m%d%H%M%S")
     elif args.command == "ids":
         convert_common_args(args)
-        PRM["b_url"], PRM["sets"], PRM["pref"] = read_yaml_file(
-            args.idfile, ["baseurl", "sets", "metadataPrefix"]
-        )
+        PRM["b_url"], PRM["sets"], PRM["pref"] = read_yaml_file(args.idfile, ["baseurl", "sets", "metadataPrefix"])
         if PRM["sets"] == ["komplett"]:
             PRM["sets"] = None
         else:
@@ -301,15 +281,11 @@ def parse_set_values(value: str | None) -> dict[str, list[str]]:
         if "/" in value:
             slash_parts = value.split("/")
             sets["additive"].extend(item.strip() for item in slash_parts[0].split(","))
-            sets["intersection"].extend(
-                item.strip() for item in slash_parts[1].split(",")
-            )
+            sets["intersection"].extend(item.strip() for item in slash_parts[1].split(","))
         elif "," in value:
             sets["additive"].extend(item.strip() for item in value.split(","))
         else:
-            sets["additive"].append(
-                value.strip()
-            )  # If no separator is found, assume comma
+            sets["additive"].append(value.strip())  # If no separator is found, assume comma
     else:
         sets = {"additive": [], "intersection": []}
     return sets

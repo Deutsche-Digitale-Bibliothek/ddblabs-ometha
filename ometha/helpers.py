@@ -119,13 +119,9 @@ def handle_error(e: Exception, mode: str | None, url: str | None = None) -> None
     }
     if type(e) is ConnectionError:
         if "404" in str(e):
-            log_critical_and_print_and_exit(
-                "The API is not reachable. Is the URL correct?", mode
-            )
+            log_critical_and_print_and_exit("The API is not reachable. Is the URL correct?", mode)
         elif errors := re.findall(r"error\scode=['\"](.+)['\"]>(.*)<\\error", str(e)):
-            log_critical_and_print_and_exit(
-                f"{FEHLER} API error: {errors[0][0]}/{errors[0][1]} at {url}", mode
-            )
+            log_critical_and_print_and_exit(f"{FEHLER} API error: {errors[0][0]}/{errors[0][1]} at {url}", mode)
     elif type(e) in error_messages:
         log_critical_and_print_and_exit(error_messages[type(e)], mode, e)
     else:

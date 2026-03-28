@@ -73,12 +73,8 @@ def interactiveMode(session: Session) -> dict[str, Any]:
 
     def add_common_args():
         PRM["dat_geb"] = input("Datengeber: ") or TIMESTR
-        PRM["out_f"] = get_folder_input(
-            "Ordner in den geharvestet werden soll: ", os.getcwd()
-        )
-        PRM["n_procs"] = int(
-            input("Anzahl an parallelen Downloads (default: 16): ") or 16
-        )
+        PRM["out_f"] = get_folder_input("Ordner in den geharvestet werden soll: ", os.getcwd())
+        PRM["n_procs"] = int(input("Anzahl an parallelen Downloads (default: 16): ") or 16)
         PRM["exp_type"] = (
             get_valid_input(
                 "Exportformat (xml/json) (default: xml): ",
@@ -105,9 +101,7 @@ def interactiveMode(session: Session) -> dict[str, Any]:
         # if the user doesnt enter anything, set to "all"
         PRM["sets"] = [
             parse_set_values(
-                input(
-                    "Set(s) kommagetrennt oder (für Schnittmenge mit '/' getrennt, default: keine Eingrenzung): "
-                )
+                input("Set(s) kommagetrennt oder (für Schnittmenge mit '/' getrennt, default: keine Eingrenzung): ")
                 or None
             )
         ]
@@ -172,21 +166,15 @@ def get_sets_mprefs(url: str, session: Session, sets: dict[str, str]) -> None:
         else:
             sets[name] = spec
     if len(sets) > 0:
-        print(
-            f"{SEP_LINE}Auf der Schnittstelle sind folgende Sets vorhanden:\n{SEP_LINE}"
-        )
+        print(f"{SEP_LINE}Auf der Schnittstelle sind folgende Sets vorhanden:\n{SEP_LINE}")
         for key in sorted(sets.keys(), key=lambda x: x.lower()):
             print(f"{key} [{sets[key]}]\n{SEP_LINE[:-1]}")
         sys.exit(0)
     else:
-        log_critical_and_print_and_exit(
-            f"{SEP_LINE}Keine Sets gefunden, ist die URL korrekt?", mode="ui"
-        )
+        log_critical_and_print_and_exit(f"{SEP_LINE}Keine Sets gefunden, ist die URL korrekt?", mode="ui")
 
     # get valid metadata prefixes
-    prefixes = sorted(
-        prefix.text for prefix in root.findall(".//{NAMESPACE}metadataPrefix")
-    )
+    prefixes = sorted(prefix.text for prefix in root.findall(".//{NAMESPACE}metadataPrefix"))
     print(
         f"{SEP_LINE}Auf der Schnittstelle {url} sind folgende Metadaten-Prefixe registriert:\n{SEP_LINE}"
         f"{', '.join(prefixes) if prefixes else ''}\n{SEP_LINE[:-1]}"

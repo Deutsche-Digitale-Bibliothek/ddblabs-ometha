@@ -629,8 +629,7 @@ class TestPrmModeTui:
         assert prm["mode"] == "ui"
 
     def test_mode_ui_gesetzt_option_r(self, session):
-        inputs = ["R", "testDG", "/tmp", "4", "xml", "0",
-                  "http://oai.example.org/", "oai_dc", "sometoken"]
+        inputs = ["R", "testDG", "/tmp", "4", "xml", "0", "http://oai.example.org/", "oai_dc", "sometoken"]
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
         assert prm["mode"] == "ui"
