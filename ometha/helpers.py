@@ -16,6 +16,7 @@ ACHTUNG = f"{Fore.YELLOW}Achtung:\n {Fore.WHITE}"
 FEHLER = f"{Fore.RED}Fehler:\n  {Style.DIM}"
 INFO = f"{Fore.YELLOW}Information: {Fore.WHITE}"
 TIMESTR = time.strftime("%Y-%m-%d_%H_%M_%SZ")
+OAITIMESTR = time.strftime("%Y-%m-%dT%H:%M:%SZ")
 NAMESPACE = "{http://www.openarchives.org/OAI/2.0/}"
 ISODATEREGEX = "(?:19|20)[0-9]{2}-(?:(?:0[1-9]|1[0-2])-(?:0[1-9]|1[0-9]|2[0-9])|(?:(?!02)(?:0[1-9]|1[0-2])-(?:30))|(?:(?:0[13578]|1[02])-31))"
 NATURALDATEREGEX = r"^(\d+)(mo|m|h|d|w)$"
@@ -32,6 +33,8 @@ PRM = {
     "id_f": None,  # id file: path
     "f_date": None,  # from date: int
     "u_date": None,  # until date: int
+    "no_log": None,  # kein Logfile anlegen: bool
+    "cleanup_empty": None,  # leere Ausgabeordner löschen: bool
     "res_tok": None,  # oai resumption token: str
     "conf_f": None,  # Configfile: path
     "conf_m": None,  # Configmode: bool

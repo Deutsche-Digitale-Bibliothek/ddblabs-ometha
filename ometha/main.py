@@ -30,6 +30,7 @@ from .helpers import (
     ACHTUNG,
     FEHLER,
     INFO,
+    OAITIMESTR,
     SEP_LINE,
     TIMESTR,
     configure_logging,
@@ -180,34 +181,35 @@ def start_process() -> None:
 
     # Logfile anlegen
     logger.remove()  # Initalen Logger löschen, damit er nicht alles in stderr loggt:
-    log_file = os.path.join(folder, f"_ometha_{PRM['dat_geb']}.log")
     logger.level("PARAMETER", no=38, color="<blue>")
-    logger.add(
-        log_file,
-        level=0,
-        format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <level>{message}</level>",
-        enqueue=True,
-    )
-    parameters = {
-        "Ometha Version": __version__,
-        # fix: PRM["mode"] is not defined
-        "Mode": f"{running_mode} with {PRM['mode']} Mode",
-        "Datengeber": PRM["dat_geb"],
-        "Base-URL": PRM["b_url"],
-        "metadataPrefix": PRM["pref"],
-        "Sets": PRM["sets"],
-        "Timeout": PRM["timeout"],
-        "Outputfolder": PRM["out_f"],
-        "Count of parallel downloads": PRM["n_procs"],
-    }
-    for param, value in parameters.items():
-        logger.log("PARAMETER", f"{param}: {value}")
-    if PRM["id_f"] is not None:
-        logger.log("PARAMETER", f"ID file: {PRM['id_f']}")
-    print(f"{INFO}Logfile: {log_file}")
+    if not PRM.get("no_log"):
+        log_file = os.path.join(folder, f"_ometha_{PRM['dat_geb']}.log")
+        logger.add(
+            log_file,
+            level=0,
+            format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <level>{message}</level>",
+            enqueue=True,
+        )
+        parameters = {
+            "Ometha Version": __version__,
+            # fix: PRM["mode"] is not defined
+            "Mode": f"{running_mode} with {PRM['mode']} Mode",
+            "Datengeber": PRM["dat_geb"],
+            "Base-URL": PRM["b_url"],
+            "metadataPrefix": PRM["pref"],
+            "Sets": PRM["sets"],
+            "Timeout": PRM["timeout"],
+            "Outputfolder": PRM["out_f"],
+            "Count of parallel downloads": PRM["n_procs"],
+        }
+        for param, value in parameters.items():
+            logger.log("PARAMETER", f"{param}: {value}")
+        if PRM["id_f"] is not None:
+            logger.log("PARAMETER", f"ID file: {PRM['id_f']}")
+        print(f"{INFO}Logfile: {log_file}")
 
     # bei Configmode & Automode das Datum der Konfigurationsdatei aktualisieren
-    change_date(TIMESTR, PRM["conf_f"], key="until-Datum")
+    change_date(OAITIMESTR, PRM["conf_f"], key="until-Datum")
 
     # Baseurl anpassen/überprüfen
     PRM["b_url"] = re.sub(r"(\?.+)", "", PRM["b_url"]).rstrip("/")
@@ -295,6 +297,9 @@ def start_process() -> None:
         f"{Style.DIM} Timeout auf {PRM['timeout']} s gesetzt. {Style.RESET_ALL}\n{SEP_LINE}"
     ) if PRM["debug"] else None
     if len(ids) == 0:
+        if PRM.get("cleanup_empty"):
+            import shutil
+            shutil.rmtree(folder, ignore_errors=True)
         log_critical_and_print_and_exit(
             f"{SEP_LINE}{FEHLER} Keine IDs gefunden. Programm beendet."
         )
@@ -329,7 +334,7 @@ def start_process() -> None:
         )
 
     # bei Configmode & Automode das Datum der Konfigurationsdatei aktualisieren
-    change_date(TIMESTR, PRM["conf_f"], key="from-Datum")
+    change_date(OAITIMESTR, PRM["conf_f"], key="from-Datum")
 
     if os.name == "nt":
         # Beenden unter Windows

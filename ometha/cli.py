@@ -7,7 +7,7 @@ from urllib.parse import parse_qs, urlparse
 
 from ._version import __version__
 from .harvester import read_yaml_file
-from .helpers import ISODATEREGEX, PRM, SEP_LINE, TIMESTR, parse_natural_date
+from .helpers import ISODATEREGEX, OAITIMESTR, PRM, SEP_LINE, TIMESTR, parse_natural_date
 
 
 def _resolve_date(value: str | None) -> str | None:
@@ -142,6 +142,18 @@ def parseargs() -> dict[str, Any]:
                 action="store_true",
                 help="Automatic mode to harvest the period from from-date to today. Automatically adjusts the data in the configuration file.",
             )
+            prs.add_argument(
+                "--no-log",
+                dest="no_log",
+                action="store_true",
+                help="Kein Logfile anlegen (sinnvoll für Cron-Betrieb mit externem Logging).",
+            )
+            prs.add_argument(
+                "--cleanup-on-empty",
+                dest="cleanup_empty",
+                action="store_true",
+                help="Ausgabeordner löschen wenn keine Datensätze geharvestet wurden.",
+            )
         elif cmd == "auto":
             add_common_args(prs)
             prs.add_argument("--url", "-u", required=True, help="URL")
@@ -178,6 +190,8 @@ def parseargs() -> dict[str, Any]:
             args.auto,
             args.exporttype,
         )
+        PRM["no_log"] = args.no_log
+        PRM["cleanup_empty"] = args.cleanup_empty
         (
             PRM["b_url"],
             PRM["sets"],  # Ensure this is a dict
@@ -189,6 +203,12 @@ def parseargs() -> dict[str, Any]:
             PRM["conf_f"],
             ["baseurl", "sets", "metadataPrefix", "datengeber", "timeout", "debug"],
         )
+        # Datumsgrenzen aus Konfigurationsdatei lesen
+        f_date_raw, u_date_raw = read_yaml_file(
+            PRM["conf_f"], ["from-Datum", "until-Datum"]
+        )
+        PRM["f_date"] = _resolve_date(str(f_date_raw)) if f_date_raw else None
+        PRM["u_date"] = _resolve_date(str(u_date_raw)) if u_date_raw else None
 
         # If baseurl is not found, try 'url' as a fallback
         if PRM["b_url"] is None:

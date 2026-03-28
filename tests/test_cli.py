@@ -454,6 +454,8 @@ class TestNaturalDateViaCLI:
 YAML_CONF_MINIMAL = {
     "baseurl": "http://conf.example.org/oai",
     "sets": ["komplett"],
+    "from-Datum": None,
+    "until-Datum": None,
     "metadataPrefix": "oai_dc",
     "datengeber": "testDG",
     "timeout": 0,
@@ -618,6 +620,46 @@ class TestConfCommand:
         with patch("ometha.cli.read_yaml_file", side_effect=mock_read_yaml):
             prm = parse_with(["conf", "-c", "config.yaml"])
         assert not prm["pref"].endswith(" ")
+
+    def test_no_log_flag(self):
+        prm = self._parse_conf(extra_argv=["--no-log"])
+        assert prm["no_log"] is True
+
+    def test_no_log_default_false(self):
+        prm = self._parse_conf()
+        assert prm["no_log"] is False
+
+    def test_cleanup_on_empty_flag(self):
+        prm = self._parse_conf(extra_argv=["--cleanup-on-empty"])
+        assert prm["cleanup_empty"] is True
+
+    def test_cleanup_on_empty_default_false(self):
+        prm = self._parse_conf()
+        assert prm["cleanup_empty"] is False
+
+    def test_from_datum_read_from_yaml(self):
+        data = {**YAML_CONF_MINIMAL, "from-Datum": "2025-01-01"}
+        prm = self._parse_conf(yaml_data=data)
+        assert prm["f_date"] == "2025-01-01"
+
+    def test_until_datum_read_from_yaml(self):
+        data = {**YAML_CONF_MINIMAL, "until-Datum": "2025-12-31"}
+        prm = self._parse_conf(yaml_data=data)
+        assert prm["u_date"] == "2025-12-31"
+
+    def test_from_datum_datetime_read_from_yaml(self):
+        """Datetime-Granularität (YYYY-MM-DDThh:mm:ssZ) muss akzeptiert werden."""
+        data = {**YAML_CONF_MINIMAL, "from-Datum": "2025-06-01T10:00:00Z"}
+        prm = self._parse_conf(yaml_data=data)
+        assert prm["f_date"] == "2025-06-01T10:00:00Z"
+
+    def test_from_datum_none_when_missing(self):
+        prm = self._parse_conf()
+        assert prm["f_date"] is None
+
+    def test_until_datum_none_when_missing(self):
+        prm = self._parse_conf()
+        assert prm["u_date"] is None
 
 
 # ---------------------------------------------------------------------------
