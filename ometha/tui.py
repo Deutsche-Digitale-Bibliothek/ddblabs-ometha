@@ -8,6 +8,7 @@ from requests import Session
 from requests.exceptions import ConnectionError, HTTPError, Timeout
 
 from .cli import parse_set_values
+from .helpers import resolve_date
 from .harvester import (
     NAMESPACE,
     PRM,
@@ -74,7 +75,8 @@ def interactiveMode(session: Session) -> dict[str, Any]:
     def add_common_args():
         PRM["dat_geb"] = input("Datengeber: ") or TIMESTR
         PRM["out_f"] = get_folder_input("Ordner in den geharvestet werden soll: ", os.getcwd())
-        PRM["n_procs"] = int(input("Anzahl an parallelen Downloads (default: 16): ") or 16)
+        n_procs_input = input("Anzahl an parallelen Downloads (default: auto): ").strip()
+        PRM["n_procs"] = int(n_procs_input) if n_procs_input else None
         PRM["exp_type"] = (
             get_valid_input(
                 "Exportformat (xml/json) (default: xml): ",
@@ -105,8 +107,14 @@ def interactiveMode(session: Session) -> dict[str, Any]:
                 or None
             )
         ]
-        PRM["f_date"] = input("Fromdate: ") or None
-        PRM["u_date"] = input("Untildate: ") or None
+        f_date_raw = input("Fromdate: ") or None
+        u_date_raw = input("Untildate: ") or None
+        PRM["f_date"] = resolve_date(f_date_raw)
+        PRM["u_date"] = resolve_date(u_date_raw)
+        if f_date_raw and not PRM["f_date"]:
+            sys.exit(f"{f_date_raw} ist kein valides Datum. Bitte ISO8601 (YYYY-MM-DD) oder z.B. '20m', '6h', '1d' verwenden.")
+        if u_date_raw and not PRM["u_date"]:
+            sys.exit(f"{u_date_raw} ist kein valides Datum. Bitte ISO8601 (YYYY-MM-DD) oder z.B. '20m', '6h', '1d' verwenden.")
     if how_to_start == "I":
         add_common_args()
         PRM["id_f"] = get_valid_input(

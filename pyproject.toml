@@ -35,7 +35,7 @@ dev = ["pytest>=7.4.0", "pytest-cov>=4.1.0"]
 Repository = "https://github.com/Deutsche-Digitale-Bibliothek/ddblabs-ometha"
 
 [project.scripts]
-ometha = "ometha.main:start_process"
+ometha = "ometha.main:main"
 ometha-gui = "ometha.gui:start_gui"
 
 

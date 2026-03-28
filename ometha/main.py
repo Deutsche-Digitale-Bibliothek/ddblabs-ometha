@@ -309,6 +309,13 @@ def start_process() -> None:
     sys.exit()
 
 
+def main() -> None:
+    try:
+        start_process()
+    except KeyboardInterrupt:
+        sys.exit(0)
+
+
 if __name__ == "__main__":
     logger = configure_logging()
-    start_process()
+    main()

@@ -75,6 +75,15 @@ def parse_natural_date(value: str) -> str | None:
     return result.strftime("%Y-%m-%d")
 
 
+def resolve_date(value: str | None) -> str | None:
+    """Löst einen Datumswert auf – entweder ISO8601 oder natürlichsprachig (z. B. ``1d``)."""
+    if not value:
+        return None
+    if re.match(ISODATEREGEX, str(value)):
+        return str(value)
+    return parse_natural_date(str(value))
+
+
 def configure_logging() -> None:
     """Configure loguru to output only ERROR-level messages to stderr."""
     logger.remove()  # Remove the default logger

@@ -8,16 +8,9 @@ from urllib.parse import parse_qs, urlparse
 
 from ._version import __version__
 from .harvester import read_yaml_file
-from .helpers import ISODATEREGEX, PRM, SEP_LINE, TIMESTR, parse_natural_date
+from .helpers import ISODATEREGEX, PRM, SEP_LINE, TIMESTR, parse_natural_date, resolve_date
 
-
-def _resolve_date(value: str | None) -> str | None:
-    """Löst einen Datumswert auf – entweder ISO8601 oder natürlichsprachig (z. B. ``1d``)."""
-    if not value:
-        return None
-    if re.match(ISODATEREGEX, str(value)):
-        return str(value)
-    return parse_natural_date(str(value))
+_resolve_date = resolve_date
 
 
 def parseargs() -> dict[str, Any]:

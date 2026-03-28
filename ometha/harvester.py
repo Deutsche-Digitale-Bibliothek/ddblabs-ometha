@@ -141,7 +141,7 @@ def get_identifier(
 
     spinner.text = f"Identifier Harvesting beendet. Insgesamt {len(id_list)} IDs bekommen."
     spinner.ok("✓")
-    logger.info(f"Letzte abgefragte URL: {PRM['b_url']}")
+    logger.info(f"Letzte abgefragte URL: {url}")
     logger.info("Identifier Harvesting beendet.")
 
     return id_list
