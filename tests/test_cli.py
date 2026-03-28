@@ -15,7 +15,10 @@ das globale PRM-Dict wird vor jedem Test zurückgesetzt.
 """
 
 import os
+import re
 import sys
+from datetime import datetime, timedelta
+
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -122,9 +125,7 @@ class TestDefaultCommand:
         assert prm["pref"] == "mods"
 
     def test_datengeber_short(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-d", "meinDG"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-d", "meinDG"])
         assert prm["dat_geb"] == "meinDG"
 
     def test_datengeber_long(self):
@@ -148,28 +149,20 @@ class TestDefaultCommand:
         assert len(prm["dat_geb"]) > 0
 
     def test_fromdate_valid(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "2023-06-01"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "2023-06-01"])
         assert prm["f_date"] == "2023-06-01"
 
-    def test_fromdate_invalid_is_none(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "not-a-date"]
-        )
-        assert prm["f_date"] is None
+    def test_fromdate_invalid_exits(self):
+        with pytest.raises(SystemExit):
+            parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "not-a-date"])
 
     def test_untildate_valid(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-u", "2024-12-31"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-u", "2024-12-31"])
         assert prm["u_date"] == "2024-12-31"
 
-    def test_untildate_invalid_is_none(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-u", "31.12.2024"]
-        )
-        assert prm["u_date"] is None
+    def test_untildate_invalid_exits(self):
+        with pytest.raises(SystemExit):
+            parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-u", "31.12.2024"])
 
     def test_fromdate_and_untildate_together(self):
         prm = parse_with(
@@ -207,9 +200,7 @@ class TestDefaultCommand:
         assert prm["res_tok"] is None
 
     def test_set_single(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "ddc:500"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "ddc:500"])
         assert prm["sets"] is not None
         # -s liefert eine Liste von dicts
         sets = prm["sets"]
@@ -217,15 +208,11 @@ class TestDefaultCommand:
         assert sets[0]["additive"] == ["ddc:500"]
 
     def test_set_multiple(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "setA,setB"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "setA,setB"])
         assert prm["sets"][0]["additive"] == ["setA", "setB"]
 
     def test_set_with_intersection(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "setA/setB"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "setA/setB"])
         assert prm["sets"][0]["additive"] == ["setA"]
         assert prm["sets"][0]["intersection"] == ["setB"]
 
@@ -254,9 +241,7 @@ class TestDefaultCommand:
         assert prm["timeout"] == 0
 
     def test_outputfolder_short(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-o", "/tmp/myfolder"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-o", "/tmp/myfolder"])
         assert prm["out_f"] == "/tmp/myfolder"
 
     def test_outputfolder_default_is_cwd(self):
@@ -264,9 +249,7 @@ class TestDefaultCommand:
         assert prm["out_f"] == os.getcwd()
 
     def test_exporttype_json(self):
-        prm = parse_with(
-            ["default", "-b", "http://x.org/", "-m", "oai_dc", "-e", "json"]
-        )
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-e", "json"])
         assert prm["exp_type"] == "json"
 
     def test_exporttype_default_xml(self):
@@ -325,12 +308,252 @@ class TestDefaultCommand:
 
 
 # ---------------------------------------------------------------------------
+# Natural language date parsing
+# ---------------------------------------------------------------------------
+
+ISODATEREGEX = r"^\d{4}-\d{2}-\d{2}$"
+ISODATETIMEREGEX = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
+
+
+class TestParseNaturalDate:
+    """Tests für parse_natural_date() aus helpers.py."""
+
+    def setup_method(self):
+        from ometha.helpers import parse_natural_date
+
+        self.pnd = parse_natural_date
+
+    def _assert_iso_date(self, result):
+        assert result is not None
+        assert re.match(ISODATEREGEX, result), f"Kein ISO8601-Datum: {result!r}"
+
+    def test_days(self):
+        result = self.pnd("1d")
+        self._assert_iso_date(result)
+        expected = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        assert result == expected
+
+    def test_multiple_days(self):
+        result = self.pnd("7d")
+        expected = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+        assert result == expected
+
+    def test_hours(self):
+        result = self.pnd("2h")
+        assert result is not None
+        assert re.match(ISODATETIMEREGEX, result), f"Kein ISO8601-Datetime: {result!r}"
+
+    def test_minutes(self):
+        result = self.pnd("20m")
+        assert result is not None
+        assert re.match(ISODATETIMEREGEX, result), f"Kein ISO8601-Datetime: {result!r}"
+
+    def test_weeks(self):
+        result = self.pnd("3w")
+        expected = (datetime.now() - timedelta(weeks=3)).strftime("%Y-%m-%d")
+        assert result == expected
+
+    def test_months(self):
+        result = self.pnd("1mo")
+        self._assert_iso_date(result)
+        expected = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        assert result == expected
+
+    def test_invalid_returns_none(self):
+        assert self.pnd("not-a-date") is None
+
+    def test_plain_number_returns_none(self):
+        assert self.pnd("42") is None
+
+    def test_unknown_unit_returns_none(self):
+        assert self.pnd("5y") is None
+
+    def test_whitespace_stripped(self):
+        result = self.pnd(" 1d ")
+        self._assert_iso_date(result)
+
+
+class TestNaturalDateViaCLI:
+    """Integrationstests: natürlichsprachige Datumsangaben über CLI."""
+
+    def test_fromdate_natural_days(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "1d"])
+        assert prm["f_date"] is not None
+        assert re.match(ISODATEREGEX, prm["f_date"])
+        expected = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        assert prm["f_date"] == expected
+
+    def test_fromdate_natural_hours(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "6h"])
+        assert prm["f_date"] is not None
+        assert re.match(ISODATETIMEREGEX, prm["f_date"])
+
+    def test_fromdate_natural_minutes(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "20m"])
+        assert prm["f_date"] is not None
+        assert re.match(ISODATETIMEREGEX, prm["f_date"])
+
+    def test_untildate_natural_weeks(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-u", "2w"])
+        assert prm["u_date"] is not None
+        assert re.match(ISODATEREGEX, prm["u_date"])
+
+    def test_untildate_natural_months(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-u", "1mo"])
+        assert prm["u_date"] is not None
+        assert re.match(ISODATEREGEX, prm["u_date"])
+
+    def test_iso_date_still_works(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "2024-01-15"])
+        assert prm["f_date"] == "2024-01-15"
+
+    def test_invalid_date_exits(self):
+        with pytest.raises(SystemExit):
+            parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-f", "gestern"])
+
+
+# ---------------------------------------------------------------------------
+# PRM["mode"] – wird in allen Subcommands auf "cli" gesetzt
+# ---------------------------------------------------------------------------
+
+
+class TestPrmMode:
+    def test_mode_cli_default(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc"])
+        assert prm["mode"] == "cli"
+
+    def test_mode_cli_auto(self):
+        prm = parse_with(["auto", "-u", "http://x.org/?metadataPrefix=oai_dc"])
+        assert prm["mode"] == "cli"
+
+    def test_mode_cli_conf(self):
+        data = {
+            "baseurl": "http://x.org/",
+            "sets": [],
+            "metadataPrefix": "oai_dc",
+            "datengeber": "dg",
+            "timeout": 0,
+            "debug": False,
+            "outputfolder": "/tmp",
+            "from-Datum": None,
+            "until-Datum": None,
+            "fromdate": None,
+            "untildate": None,
+        }
+
+        def mock_read_yaml(path, keys, default=None):
+            return [data.get(k, default) for k in keys]
+
+        with patch("ometha.cli.read_yaml_file", side_effect=mock_read_yaml):
+            prm = parse_with(["conf", "-c", "config.yaml"])
+        assert prm["mode"] == "cli"
+
+    def test_mode_cli_ids(self):
+        data = {"baseurl": "http://x.org/", "sets": ["setA"], "metadataPrefix": "oai_dc"}
+
+        def mock_read_yaml(path, keys, default=None):
+            return [data.get(k, default) for k in keys]
+
+        with patch("ometha.cli.read_yaml_file", side_effect=mock_read_yaml):
+            prm = parse_with(["ids", "-i", "ids.yaml"])
+        assert prm["mode"] == "cli"
+
+
+# ---------------------------------------------------------------------------
+# "komplett" im default-Modus
+# ---------------------------------------------------------------------------
+
+
+class TestKomplettInDefaultMode:
+    def test_komplett_filtered_from_additive(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "komplett"])
+        assert prm["sets"][0]["additive"] == []
+
+    def test_komplett_case_insensitive(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "Komplett"])
+        assert prm["sets"][0]["additive"] == []
+
+    def test_regular_set_not_filtered(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "ddc:500"])
+        assert prm["sets"][0]["additive"] == ["ddc:500"]
+
+    def test_komplett_in_set_list_removed(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-s", "ddc:500,komplett"])
+        assert "komplett" not in prm["sets"][0]["additive"]
+        assert "ddc:500" in prm["sets"][0]["additive"]
+
+
+# ---------------------------------------------------------------------------
+# conf-Modus: beide Datums-Key-Namen
+# ---------------------------------------------------------------------------
+
+
+class TestConfDateKeys:
+    """Conf-Modus muss sowohl "from-Datum"/"until-Datum" als auch
+    "fromdate"/"untildate" aus der YAML lesen können."""
+
+    def _parse_conf_with_yaml(self, yaml_data):
+        def mock_read_yaml(path, keys, default=None):
+            return [yaml_data.get(k, default) for k in keys]
+
+        with patch("ometha.cli.read_yaml_file", side_effect=mock_read_yaml):
+            return parse_with(["conf", "-c", "config.yaml"])
+
+    def _base_yaml(self):
+        return {
+            "baseurl": "http://x.org/",
+            "sets": [],
+            "metadataPrefix": "oai_dc",
+            "datengeber": "dg",
+            "timeout": 0,
+            "debug": False,
+            "outputfolder": "/tmp",
+            "from-Datum": None,
+            "until-Datum": None,
+            "fromdate": None,
+            "untildate": None,
+        }
+
+    def test_auto_key_from_datum(self):
+        data = {**self._base_yaml(), "from-Datum": "2025-01-01"}
+        prm = self._parse_conf_with_yaml(data)
+        assert prm["f_date"] == "2025-01-01"
+
+    def test_auto_key_until_datum(self):
+        data = {**self._base_yaml(), "until-Datum": "2025-12-31"}
+        prm = self._parse_conf_with_yaml(data)
+        assert prm["u_date"] == "2025-12-31"
+
+    def test_manual_key_fromdate(self):
+        data = {**self._base_yaml(), "fromdate": "2024-06-01"}
+        prm = self._parse_conf_with_yaml(data)
+        assert prm["f_date"] == "2024-06-01"
+
+    def test_manual_key_untildate(self):
+        data = {**self._base_yaml(), "untildate": "2024-06-30"}
+        prm = self._parse_conf_with_yaml(data)
+        assert prm["u_date"] == "2024-06-30"
+
+    def test_auto_key_takes_priority_over_manual(self):
+        data = {**self._base_yaml(), "from-Datum": "2025-01-01", "fromdate": "2020-01-01"}
+        prm = self._parse_conf_with_yaml(data)
+        assert prm["f_date"] == "2025-01-01"
+
+    def test_datetime_granularity_accepted(self):
+        data = {**self._base_yaml(), "from-Datum": "2025-06-01T10:00:00Z"}
+        prm = self._parse_conf_with_yaml(data)
+        assert prm["f_date"] == "2025-06-01T10:00:00Z"
+
+
+# ---------------------------------------------------------------------------
 # `conf` Subcommand
 # ---------------------------------------------------------------------------
 
 YAML_CONF_MINIMAL = {
     "baseurl": "http://conf.example.org/oai",
     "sets": ["komplett"],
+    "from-Datum": None,
+    "until-Datum": None,
     "metadataPrefix": "oai_dc",
     "datengeber": "testDG",
     "timeout": 0,
@@ -496,6 +719,46 @@ class TestConfCommand:
             prm = parse_with(["conf", "-c", "config.yaml"])
         assert not prm["pref"].endswith(" ")
 
+    def test_no_log_flag(self):
+        prm = self._parse_conf(extra_argv=["--no-log"])
+        assert prm["no_log"] is True
+
+    def test_no_log_default_false(self):
+        prm = self._parse_conf()
+        assert prm["no_log"] is False
+
+    def test_cleanup_on_empty_flag(self):
+        prm = self._parse_conf(extra_argv=["--cleanup-on-empty"])
+        assert prm["cleanup_empty"] is True
+
+    def test_cleanup_on_empty_default_false(self):
+        prm = self._parse_conf()
+        assert prm["cleanup_empty"] is False
+
+    def test_from_datum_read_from_yaml(self):
+        data = {**YAML_CONF_MINIMAL, "from-Datum": "2025-01-01"}
+        prm = self._parse_conf(yaml_data=data)
+        assert prm["f_date"] == "2025-01-01"
+
+    def test_until_datum_read_from_yaml(self):
+        data = {**YAML_CONF_MINIMAL, "until-Datum": "2025-12-31"}
+        prm = self._parse_conf(yaml_data=data)
+        assert prm["u_date"] == "2025-12-31"
+
+    def test_from_datum_datetime_read_from_yaml(self):
+        """Datetime-Granularität (YYYY-MM-DDThh:mm:ssZ) muss akzeptiert werden."""
+        data = {**YAML_CONF_MINIMAL, "from-Datum": "2025-06-01T10:00:00Z"}
+        prm = self._parse_conf(yaml_data=data)
+        assert prm["f_date"] == "2025-06-01T10:00:00Z"
+
+    def test_from_datum_none_when_missing(self):
+        prm = self._parse_conf()
+        assert prm["f_date"] is None
+
+    def test_until_datum_none_when_missing(self):
+        prm = self._parse_conf()
+        assert prm["u_date"] is None
+
 
 # ---------------------------------------------------------------------------
 # `auto` Subcommand
@@ -582,9 +845,7 @@ class TestAutoCommand:
 
     def test_base_url_path_preserved(self):
         """Pfadkomponenten der URL sollen erhalten bleiben."""
-        prm = parse_with(
-            ["auto", "-u", "http://oai.example.org/oai/request?metadataPrefix=oai_dc"]
-        )
+        prm = parse_with(["auto", "-u", "http://oai.example.org/oai/request?metadataPrefix=oai_dc"])
         assert prm["b_url"] == "http://oai.example.org/oai/request"
 
 

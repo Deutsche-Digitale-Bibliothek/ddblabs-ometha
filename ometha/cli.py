@@ -1,13 +1,16 @@
 import argparse
 import os
 import re
+import sys
 import time
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from ._version import __version__
 from .harvester import read_yaml_file
-from .helpers import ISODATEREGEX, PRM, SEP_LINE, TIMESTR
+from .helpers import PRM, SEP_LINE, TIMESTR, resolve_date
+
+_resolve_date = resolve_date
 
 
 def parseargs() -> dict[str, Any]:
@@ -36,18 +39,14 @@ def parseargs() -> dict[str, Any]:
             help="Timeout between requests in seconds (default: 0)",
             default=0,
         )
-        s.add_argument(
-            "--outputfolder", "-o", help="Output folder", default=os.getcwd()
-        )
+        s.add_argument("--outputfolder", "-o", help="Output folder", default=os.getcwd())
         s.add_argument(
             "--debug",
             dest="debug",
             help="Print ListIdentifiers output",
             action="store_true",
         )
-        s.add_argument(
-            "--exporttype", "-e", help="Export format (xml/json)", default="xml"
-        )
+        s.add_argument("--exporttype", "-e", help="Export format (xml/json)", default="xml")
 
     def convert_common_args(args):
         PRM["timeout"], PRM["n_procs"], PRM["out_f"], PRM["debug"], PRM["exp_type"] = (
@@ -87,15 +86,9 @@ def parseargs() -> dict[str, Any]:
                 "--resumptiontoken",
                 help="Resume harvesting with resumptionToken. Requires -d option.",
             )
-            prs.add_argument(
-                "--baseurl", "-b", required=True, help="URL of the OAI interface"
-            )
-            prs.add_argument(
-                "--metadataprefix", "-m", required=True, help="Metadata Prefix"
-            )
-            prs.add_argument(
-                "--datengeber", "-d", default=TIMESTR, help="Datengeber (Folder name)"
-            )
+            prs.add_argument("--baseurl", "-b", required=True, help="URL of the OAI interface")
+            prs.add_argument("--metadataprefix", "-m", required=True, help="Metadata Prefix")
+            prs.add_argument("--datengeber", "-d", default=TIMESTR, help="Datengeber (Folder name)")
             prs.add_argument(
                 "--set",
                 "-s",
@@ -133,17 +126,25 @@ def parseargs() -> dict[str, Any]:
                 action="store_true",
                 help="Automatic mode to harvest the period from from-date to today. Automatically adjusts the data in the configuration file.",
             )
+            prs.add_argument(
+                "--no-log",
+                dest="no_log",
+                action="store_true",
+                help="Kein Logfile anlegen (sinnvoll für Cron-Betrieb mit externem Logging).",
+            )
+            prs.add_argument(
+                "--cleanup-on-empty",
+                dest="cleanup_empty",
+                action="store_true",
+                help="Ausgabeordner löschen wenn keine Datensätze geharvestet wurden.",
+            )
         elif cmd == "auto":
             add_common_args(prs)
             prs.add_argument("--url", "-u", required=True, help="URL")
         elif cmd == "ids":
             add_common_args(prs)
-            prs.add_argument(
-                "--idfile", "-i", required=True, help="Path to ID YAML File"
-            )
-            prs.add_argument(
-                "--datengeber", "-d", default=TIMESTR, help="Datengeber (Folder name)"
-            )
+            prs.add_argument("--idfile", "-i", required=True, help="Path to ID YAML File")
+            prs.add_argument("--datengeber", "-d", default=TIMESTR, help="Datengeber (Folder name)")
 
     args = toplevelparser.parse_args()
 
@@ -156,22 +157,17 @@ def parseargs() -> dict[str, Any]:
             args.datengeber,
             args.set,
         )
-        PRM["f_date"] = (
-            args.fromdate
-            if args.fromdate and re.match(ISODATEREGEX, str(args.fromdate))
-            else None
-        )
-        PRM["u_date"] = (
-            args.untildate
-            if args.untildate and re.match(ISODATEREGEX, str(args.untildate))
-            else None
-        )
-        print(
-            f"{SEP_LINE}{args.untildate} ist kein valides ISO8601 Date."
-        ) if args.fromdate and not PRM["f_date"] else None
-        print(
-            f"{SEP_LINE}{args.fromdate} ist kein valides ISO8601 Date."
-        ) if args.untildate and not PRM["u_date"] else None
+        # "komplett" aus Sets entfernen (kein Filter = vollständiges Harvesting)
+        if PRM["sets"]:
+            for set_dict in PRM["sets"]:
+                set_dict["additive"] = [s for s in set_dict["additive"] if s.lower() != "komplett"]
+                set_dict["intersection"] = [s for s in set_dict["intersection"] if s.lower() != "komplett"]
+        PRM["f_date"] = _resolve_date(args.fromdate)
+        PRM["u_date"] = _resolve_date(args.untildate)
+        if args.fromdate and not PRM["f_date"]:
+            sys.exit(f"{SEP_LINE}{args.fromdate} ist kein valides Datum. Bitte ISO8601 (YYYY-MM-DD) oder z.B. '20m', '6h', '1d' verwenden.")
+        if args.untildate and not PRM["u_date"]:
+            sys.exit(f"{SEP_LINE}{args.untildate} ist kein valides Datum. Bitte ISO8601 (YYYY-MM-DD) oder z.B. '20m', '6h', '1d' verwenden.")
     elif args.command == "conf":
         PRM["conf_m"] = True
         PRM["conf_f"], PRM["auto_m"], PRM["exp_type"] = (
@@ -179,6 +175,8 @@ def parseargs() -> dict[str, Any]:
             args.auto,
             args.exporttype,
         )
+        PRM["no_log"] = args.no_log
+        PRM["cleanup_empty"] = args.cleanup_empty
         (
             PRM["b_url"],
             PRM["sets"],  # Ensure this is a dict
@@ -190,6 +188,20 @@ def parseargs() -> dict[str, Any]:
             PRM["conf_f"],
             ["baseurl", "sets", "metadataPrefix", "datengeber", "timeout", "debug"],
         )
+        # Datumsgrenzen aus Konfigurationsdatei lesen.
+        # Unterstützt beide Key-Namen: "from-Datum"/"until-Datum" (Auto-Modus)
+        # und "fromdate"/"untildate" (manuell gesetzt, wie in der Dokumentation beschrieben).
+        f_auto, f_manual, u_auto, u_manual = read_yaml_file(
+            PRM["conf_f"], ["from-Datum", "fromdate", "until-Datum", "untildate"]
+        )
+        f_date_raw = f_auto or f_manual
+        u_date_raw = u_auto or u_manual
+        PRM["f_date"] = _resolve_date(str(f_date_raw)) if f_date_raw else None
+        PRM["u_date"] = _resolve_date(str(u_date_raw)) if u_date_raw else None
+        if f_date_raw and not PRM["f_date"]:
+            sys.exit(f"{SEP_LINE}{f_date_raw} ist kein valides Datum. Bitte ISO8601 (YYYY-MM-DD) oder z.B. '20m', '6h', '1d' verwenden.")
+        if u_date_raw and not PRM["u_date"]:
+            sys.exit(f"{SEP_LINE}{u_date_raw} ist kein valides Datum. Bitte ISO8601 (YYYY-MM-DD) oder z.B. '20m', '6h', '1d' verwenden.")
 
         # If baseurl is not found, try 'url' as a fallback
         if PRM["b_url"] is None:
@@ -204,7 +216,7 @@ def parseargs() -> dict[str, Any]:
             PRM["dat_geb"] = read_yaml_file(PRM["conf_f"], ["name"])[0]
 
         # outputfolder: if none is defined use the current working directory
-        PRM["out_f"] = read_yaml_file(PRM["conf_f"], ["outputfolder"], os.getcwd())[0]
+        PRM["out_f"] = read_yaml_file(PRM["conf_f"], ["outputfolder"], os.getcwd())[0] or os.getcwd()
         # n_procs: read from config file, None means auto-scale based on ID count
         PRM["n_procs"] = read_yaml_file(PRM["conf_f"], ["numberofprocesses"])[0]
         # Clean up base URL and prefix if they are not None
@@ -238,15 +250,14 @@ def parseargs() -> dict[str, Any]:
         PRM["dat_geb"] = time.strftime("%Y%m%d%H%M%S")
     elif args.command == "ids":
         convert_common_args(args)
-        PRM["b_url"], PRM["sets"], PRM["pref"] = read_yaml_file(
-            args.idfile, ["baseurl", "sets", "metadataPrefix"]
-        )
+        PRM["b_url"], PRM["sets"], PRM["pref"] = read_yaml_file(args.idfile, ["baseurl", "sets", "metadataPrefix"])
         if PRM["sets"] == ["komplett"]:
             PRM["sets"] = None
         else:
             PRM["sets"] = [{"additive": PRM["sets"], "intersection": []}]
         PRM["dat_geb"], PRM["id_f"] = args.datengeber, args.idfile
 
+    PRM["mode"] = "cli"
     return PRM
 
 
@@ -268,15 +279,11 @@ def parse_set_values(value: str | None) -> dict[str, list[str]]:
         if "/" in value:
             slash_parts = value.split("/")
             sets["additive"].extend(item.strip() for item in slash_parts[0].split(","))
-            sets["intersection"].extend(
-                item.strip() for item in slash_parts[1].split(",")
-            )
+            sets["intersection"].extend(item.strip() for item in slash_parts[1].split(","))
         elif "," in value:
             sets["additive"].extend(item.strip() for item in value.split(","))
         else:
-            sets["additive"].append(
-                value.strip()
-            )  # If no separator is found, assume comma
+            sets["additive"].append(value.strip())  # If no separator is found, assume comma
     else:
         sets = {"additive": [], "intersection": []}
     return sets

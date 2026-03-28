@@ -30,6 +30,7 @@ from .helpers import (
     ACHTUNG,
     FEHLER,
     INFO,
+    OAITIMESTR,
     SEP_LINE,
     TIMESTR,
     configure_logging,
@@ -39,9 +40,7 @@ from .helpers import (
 from .tui import interactiveMode
 
 
-def generate_id_harvesting_url(
-    PRM: dict, set: str, session: requests.Session
-) -> list[str]:
+def generate_id_harvesting_url(PRM: dict, set: str, session: requests.Session) -> list[str]:
     """Build a ListIdentifiers URL from PRM parameters and return all harvested IDs.
 
     If a resumption token is present in PRM it is used directly; otherwise the URL
@@ -59,9 +58,7 @@ def generate_id_harvesting_url(
     base_url = f"{PRM['b_url']}?verb=ListIdentifiers&"
     if PRM["res_tok"]:
         url = f"{base_url}&resumptionToken={PRM['res_tok']}"
-        logger.info(
-            f"Fortsetzen des Identifier-Harvestings bei: {re.sub('/$', '', url)}"
-        )
+        logger.info(f"Fortsetzen des Identifier-Harvestings bei: {re.sub('/$', '', url)}")
     else:
         url = f"{base_url}{'&'.join(f'{name}={PRM[key]}' for name, key in urlpar.items() if PRM[key] is not None)}"
     if set:
@@ -78,23 +75,17 @@ def start_process() -> None:
     identifier harvesting, and file harvesting with retry logic.
     """
     multiprocessing.freeze_support()  # multiprocessing Einstellung
-    if (
-        sys.platform == "darwin"
-        and multiprocessing.get_start_method(allow_none=True) is None
-    ):
+    if sys.platform == "darwin" and multiprocessing.get_start_method(allow_none=True) is None:
         multiprocessing.set_start_method("fork")
     init(autoreset=True)  # Colorama Einstellung:
 
     if getattr(sys, "frozen", False):
         application_path = os.path.dirname(os.path.abspath(sys.executable))
-        running_mode = "Frozen/executable"
     else:
         try:
             application_path = os.path.dirname(os.path.abspath(__file__))
-            running_mode = "Non-interactive"
         except NameError:
             application_path = os.getcwd()
-            running_mode = "Interactive"
 
     config_path = (
         os.path.join(os.path.expanduser("~"), ".ometha")
@@ -105,16 +96,9 @@ def start_process() -> None:
         with open(config_path, "r", encoding="utf-8") as yaml_configfile:
             headers = yaml.safe_load(yaml_configfile)
     else:
-        if (
-            input(
-                "Konfigurationsdatei mit abweichenden Werten für den http-Header erstellen? y/N: "
-            ).lower()
-            == "y"
-        ):
+        if input("Konfigurationsdatei mit abweichenden Werten für den http-Header erstellen? y/N: ").lower() == "y":
             ua = input("Wie soll der User-Agent String lauten?: ")
-            frm = input(
-                "Soll es 'from'-Feld im Header geben? (Leerlassen, wenn nein): "
-            )
+            frm = input("Soll es 'from'-Feld im Header geben? (Leerlassen, wenn nein): ")
             headers = {"User-Agent": ua, "From": frm, "asciiart": True}
             with open(os.path.join(config_path), "w", encoding="utf8") as f:
                 f.write(yaml.dump(headers))
@@ -171,43 +155,49 @@ def start_process() -> None:
     # output PRM dictionary if debug mode is enabled via environment variable
     if os.getenv("OMETHA_DEBUG") == "True":
         print(PRM)
-    # Create folder for log, config file and output in the current directory
-    if PRM["out_f"] is None:
-        PRM["out_f"] = os.path.join(os.getcwd(), "output")
     folder = os.path.join(PRM["out_f"], PRM["dat_geb"], TIMESTR)
     folder = folder.replace(":", "_")
     os.makedirs(folder, exist_ok=True)
 
+    # bei Configmode & Automode das until-Datum setzen bevor es geloggt wird
+    if PRM["conf_m"] and PRM["auto_m"]:
+        change_date(OAITIMESTR, PRM["conf_f"], key="until-Datum")
+        PRM["u_date"] = OAITIMESTR
+
     # Logfile anlegen
     logger.remove()  # Initalen Logger löschen, damit er nicht alles in stderr loggt:
-    log_file = os.path.join(folder, f"_ometha_{PRM['dat_geb']}.log")
     logger.level("PARAMETER", no=38, color="<blue>")
-    logger.add(
-        log_file,
-        level=0,
-        format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <level>{message}</level>",
-        enqueue=True,
-    )
-    parameters = {
-        "Ometha Version": __version__,
-        # fix: PRM["mode"] is not defined
-        "Mode": f"{running_mode} with {PRM['mode']} Mode",
-        "Datengeber": PRM["dat_geb"],
-        "Base-URL": PRM["b_url"],
-        "metadataPrefix": PRM["pref"],
-        "Sets": PRM["sets"],
-        "Timeout": PRM["timeout"],
-        "Outputfolder": PRM["out_f"],
-        "Count of parallel downloads": PRM["n_procs"],
-    }
-    for param, value in parameters.items():
-        logger.log("PARAMETER", f"{param}: {value}")
-    if PRM["id_f"] is not None:
-        logger.log("PARAMETER", f"ID file: {PRM['id_f']}")
-    print(f"{INFO}Logfile: {log_file}")
-
-    # bei Configmode & Automode das Datum der Konfigurationsdatei aktualisieren
-    change_date(TIMESTR, PRM["conf_f"], key="until-Datum")
+    if not PRM.get("no_log"):
+        log_file = os.path.join(folder, f"_ometha_{PRM['dat_geb']}.log")
+        logger.add(
+            log_file,
+            level=0,
+            format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <level>{message}</level>",
+            enqueue=True,
+        )
+        parameters = {
+            "Ometha Version": __version__,
+            "Datengeber": PRM["dat_geb"],
+            "Base-URL": PRM["b_url"],
+            "metadataPrefix": PRM["pref"],
+        }
+        if PRM["sets"]:
+            parameters["Sets"] = PRM["sets"]
+        if PRM["timeout"]:
+            parameters["Timeout"] = PRM["timeout"]
+        if PRM["out_f"]:
+            parameters["Outputfolder"] = PRM["out_f"]
+        if PRM["n_procs"] is not None:
+            parameters["Number of parallel downloads"] = PRM["n_procs"]
+        if PRM["f_date"] is not None:
+            parameters["From date"] = PRM["f_date"]
+        if PRM["u_date"] is not None:
+            parameters["Until date"] = PRM["u_date"]
+        for param, value in parameters.items():
+            logger.log("PARAMETER", f"{param}: {value}")
+        if PRM["id_f"] is not None:
+            logger.log("PARAMETER", f"ID file: {PRM['id_f']}")
+        print(f"{INFO}Logfile: {log_file}")
 
     # Baseurl anpassen/überprüfen
     PRM["b_url"] = re.sub(r"(\?.+)", "", PRM["b_url"]).rstrip("/")
@@ -227,9 +217,7 @@ def start_process() -> None:
                 Spinners.dots,
                 text=f"Checking if {PRM['b_url']}?verb=Identify is accessible",
             ):
-                session.get(
-                    PRM["b_url"] + "?verb=Identify", verify=False, timeout=(20, 80)
-                )
+                session.get(PRM["b_url"] + "?verb=Identify", verify=False, timeout=(20, 80))
         except (
             requests.exceptions.HTTPError,
             requests.exceptions.RetryError,
@@ -254,9 +242,7 @@ def start_process() -> None:
         if PRM["sets"]:  # Check if sets is not empty
             # Initialize lists for comma and slash sets
             # Extract the first dictionary from the sets list
-            sets_dict = (
-                PRM["sets"][0] if PRM["sets"] else {"additive": [], "intersection": []}
-            )
+            sets_dict = PRM["sets"][0] if PRM["sets"] else {"additive": [], "intersection": []}
             a_sets = sets_dict.get("additive", [])
             i_sets = sets_dict.get("intersection", [])
 
@@ -265,16 +251,8 @@ def start_process() -> None:
                 ids = generate_id_harvesting_url(PRM, set=None, session=session)
             else:
                 # Initialize lists for comma and slash ids
-                a_ids = [
-                    id
-                    for a_set in a_sets
-                    for id in generate_id_harvesting_url(PRM, a_set, session)
-                ]
-                i_ids = [
-                    id
-                    for i_set in i_sets
-                    for id in generate_id_harvesting_url(PRM, i_set, session)
-                ]
+                a_ids = [id for a_set in a_sets for id in generate_id_harvesting_url(PRM, a_set, session)]
+                i_ids = [id for i_set in i_sets for id in generate_id_harvesting_url(PRM, i_set, session)]
                 # If both i_ids and a_ids exist, get the common ids
                 ids = list(set(i_ids) & set(a_ids)) if i_ids else a_ids
         else:
@@ -283,21 +261,18 @@ def start_process() -> None:
         create_id_file(PRM, ids, folder, type="successful")
     # Dateiharvesting beginnen
     # None means no explicit value was given → auto-scale based on ID count (max 16)
-    PRM["n_procs"] = (
-        min(int(2 * len(ids) / 300 + 4), 16)
-        if PRM["n_procs"] is None
-        else min(int(PRM["n_procs"]), 100)
-    )
-    logger.info(
-        f"Anzahl der parallelen Downloads auf {PRM['n_procs']} gesetzt (auf Basis der Anzahl an IDs)."
-    )
-    print(
-        f"{Style.DIM} Timeout auf {PRM['timeout']} s gesetzt. {Style.RESET_ALL}\n{SEP_LINE}"
-    ) if PRM["debug"] else None
+    PRM["n_procs"] = min(int(2 * len(ids) / 300 + 4), 16) if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
+    logger.info(f"Anzahl der parallelen Downloads auf {PRM['n_procs']} gesetzt (auf Basis der Anzahl an IDs).")
+    print(f"{Style.DIM} Timeout auf {PRM['timeout']} s gesetzt. {Style.RESET_ALL}\n{SEP_LINE}") if PRM[
+        "debug"
+    ] else None
     if len(ids) == 0:
-        log_critical_and_print_and_exit(
-            f"{SEP_LINE}{FEHLER} Keine IDs gefunden. Programm beendet."
-        )
+        if PRM.get("cleanup_empty"):
+            import shutil
+
+            shutil.rmtree(folder, ignore_errors=True)
+        print_and_log(f"{SEP_LINE}Keine IDs gefunden. Programm beendet.", logger, "warning")
+        change_date(OAITIMESTR, PRM["conf_f"], key="from-Datum")
         sys.exit()
     # ---- Start Harvesting ----
     failed_download, failed_ids = harvest_files(ids, PRM, folder, session)
@@ -321,15 +296,10 @@ def start_process() -> None:
             )
 
         # print runtime
-        runtime = "{:02}:{:02}:{:.3f}".format(
-            *divmod(timeit.default_timer() - start_time, 3600, 60)
-        )
-        print_and_log(
-            f"{SEP_LINE}{INFO} Vorgang hat {runtime} gedauert", logger, "info"
-        )
+        runtime = "{:02}:{:02}:{:.3f}".format(*divmod(timeit.default_timer() - start_time, 3600, 60))
+        print_and_log(f"{SEP_LINE}{INFO} Vorgang hat {runtime} gedauert", logger, "info")
 
-    # bei Configmode & Automode das Datum der Konfigurationsdatei aktualisieren
-    change_date(TIMESTR, PRM["conf_f"], key="from-Datum")
+    change_date(OAITIMESTR, PRM["conf_f"], key="from-Datum")
 
     if os.name == "nt":
         # Beenden unter Windows
@@ -337,6 +307,17 @@ def start_process() -> None:
     sys.exit()
 
 
+def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "gui":
+        from .gui import start_gui
+        start_gui()
+        return
+    try:
+        start_process()
+    except KeyboardInterrupt:
+        sys.exit(0)
+
+
 if __name__ == "__main__":
     logger = configure_logging()
-    start_process()
+    main()

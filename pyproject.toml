@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ometha"
-version = "2.0.2"
+version = "2.1.0"
 description = "OAI Metadata Harvester"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -35,8 +35,7 @@ dev = ["pytest>=7.4.0", "pytest-cov>=4.1.0"]
 Repository = "https://github.com/Deutsche-Digitale-Bibliothek/ddblabs-ometha"
 
 [project.scripts]
-ometha = "ometha.main:start_process"
-ometha-gui = "ometha.gui:start_gui"
+ometha = "ometha.main:main"
 
 
 [tool.setuptools]

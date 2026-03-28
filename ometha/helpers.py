@@ -1,6 +1,7 @@
 import re
 import sys
 import time
+from datetime import datetime, timedelta
 from typing import Any
 
 from colorama import Fore, Style
@@ -15,8 +16,10 @@ ACHTUNG = f"{Fore.YELLOW}Achtung:\n {Fore.WHITE}"
 FEHLER = f"{Fore.RED}Fehler:\n  {Style.DIM}"
 INFO = f"{Fore.YELLOW}Information: {Fore.WHITE}"
 TIMESTR = time.strftime("%Y-%m-%d_%H_%M_%SZ")
+OAITIMESTR = time.strftime("%Y-%m-%dT%H:%M:%SZ")
 NAMESPACE = "{http://www.openarchives.org/OAI/2.0/}"
 ISODATEREGEX = "(?:19|20)[0-9]{2}-(?:(?:0[1-9]|1[0-2])-(?:0[1-9]|1[0-9]|2[0-9])|(?:(?!02)(?:0[1-9]|1[0-2])-(?:30))|(?:(?:0[13578]|1[02])-31))"
+NATURALDATEREGEX = r"^(\d+)(mo|m|h|d|w)$"
 URLREGEX = r"https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)"
 
 # initialize all parameters in a dict shortened as PRM
@@ -30,6 +33,8 @@ PRM = {
     "id_f": None,  # id file: path
     "f_date": None,  # from date: int
     "u_date": None,  # until date: int
+    "no_log": None,  # kein Logfile anlegen: bool
+    "cleanup_empty": None,  # leere Ausgabeordner löschen: bool
     "res_tok": None,  # oai resumption token: str
     "conf_f": None,  # Configfile: path
     "conf_m": None,  # Configmode: bool
@@ -39,6 +44,44 @@ PRM = {
     "mode": None,  # mode: str "ui" or "cli"
     "exp_type": None,  # export type either "xml" or "json"
 }
+
+
+def parse_natural_date(value: str) -> str | None:
+    """Wandelt einen natürlichsprachigen Datumsausdruck in ein ISO8601-Datum (YYYY-MM-DD) um.
+
+    Unterstützte Einheiten:
+      - ``20m``  → vor 20 Minuten
+      - ``2h``   → vor 2 Stunden
+      - ``1d``   → vor 1 Tag
+      - ``3w``   → vor 3 Wochen
+      - ``1mo``  → vor 1 Monat (ca. 30 Tage)
+
+    Args:
+        value: Eingabestring, z. B. ``"1d"`` oder ``"20m"``.
+
+    Returns:
+        ISO8601-Datumsstring (``YYYY-MM-DD`` oder ``YYYY-MM-DDTHH:MM:SSZ`` bei
+        Minuten/Stunden) oder ``None`` wenn das Format nicht erkannt wird.
+    """
+    match = re.match(NATURALDATEREGEX, value.strip())
+    if not match:
+        return None
+    n, unit = int(match.group(1)), match.group(2)
+    units_to_seconds = {"m": 60, "h": 3600, "d": 86400, "w": 604800, "mo": 2592000}
+    delta = timedelta(seconds=n * units_to_seconds[unit])
+    result = datetime.now() - delta
+    if unit in ("m", "h"):
+        return result.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return result.strftime("%Y-%m-%d")
+
+
+def resolve_date(value: str | None) -> str | None:
+    """Löst einen Datumswert auf – entweder ISO8601 oder natürlichsprachig (z. B. ``1d``)."""
+    if not value:
+        return None
+    if re.match(ISODATEREGEX, str(value)):
+        return str(value)
+    return parse_natural_date(str(value))
 
 
 def configure_logging() -> None:
@@ -88,13 +131,9 @@ def handle_error(e: Exception, mode: str | None, url: str | None = None) -> None
     }
     if type(e) is ConnectionError:
         if "404" in str(e):
-            log_critical_and_print_and_exit(
-                "The API is not reachable. Is the URL correct?", mode
-            )
+            log_critical_and_print_and_exit("The API is not reachable. Is the URL correct?", mode)
         elif errors := re.findall(r"error\scode=['\"](.+)['\"]>(.*)<\\error", str(e)):
-            log_critical_and_print_and_exit(
-                f"{FEHLER} API error: {errors[0][0]}/{errors[0][1]} at {url}", mode
-            )
+            log_critical_and_print_and_exit(f"{FEHLER} API error: {errors[0][0]}/{errors[0][1]} at {url}", mode)
     elif type(e) in error_messages:
         log_critical_and_print_and_exit(error_messages[type(e)], mode, e)
     else:

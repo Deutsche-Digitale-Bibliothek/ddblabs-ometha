@@ -243,7 +243,7 @@ class TestOptionN:
         assert prm["out_f"] == os.getcwd()
 
     def test_n_procs_default_wenn_leer(self, session):
-        """Leeres Parallele-Downloads-Feld → Default 16."""
+        """Leeres Parallele-Downloads-Feld → None (auto-scaling)."""
         inputs = [
             "N",
             "testDG",
@@ -259,7 +259,7 @@ class TestOptionN:
         ]
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
-        assert prm["n_procs"] == 16
+        assert prm["n_procs"] is None
 
     def test_invalid_exporttype_retried(self, session):
         """Ungültiges Exportformat → TUI fragt erneut."""
@@ -613,3 +613,23 @@ class TestOptionS:
             with pytest.raises(SystemExit) as exc:
                 interactiveMode(session)
         assert exc.value.code == 0
+
+
+# ---------------------------------------------------------------------------
+# PRM["mode"] im TUI-Modus
+# ---------------------------------------------------------------------------
+
+
+class TestPrmModeTui:
+    """interactiveMode() muss PRM["mode"] = "ui" setzen."""
+
+    def test_mode_ui_gesetzt_option_n(self, session):
+        with mock_inputs(*N_INPUTS):
+            prm = interactiveMode(session)
+        assert prm["mode"] == "ui"
+
+    def test_mode_ui_gesetzt_option_r(self, session):
+        inputs = ["R", "testDG", "/tmp", "4", "xml", "0", "http://oai.example.org/", "oai_dc", "sometoken"]
+        with mock_inputs(*inputs):
+            prm = interactiveMode(session)
+        assert prm["mode"] == "ui"
