@@ -243,7 +243,7 @@ class TestOptionN:
         assert prm["out_f"] == os.getcwd()
 
     def test_n_procs_default_wenn_leer(self, session):
-        """Leeres Parallele-Downloads-Feld → Default 16."""
+        """Leeres Parallele-Downloads-Feld → None (auto-scaling)."""
         inputs = [
             "N",
             "testDG",
@@ -259,7 +259,7 @@ class TestOptionN:
         ]
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
-        assert prm["n_procs"] == 16
+        assert prm["n_procs"] is None
 
     def test_invalid_exporttype_retried(self, session):
         """Ungültiges Exportformat → TUI fragt erneut."""
