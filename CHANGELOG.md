@@ -5,6 +5,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.1.0] – 2026-03-28
+
+### Added
+- Natural language date input for `--fromdate` / `--untildate`: accepts relative expressions like `1d`, `6h`, `20m`, `3w`, `1mo` in addition to ISO8601 dates
+- `conf` mode: `--no-log` flag to suppress logfile creation (useful for cron jobs with external logging)
+- `conf` mode: `--cleanup-on-empty` flag to remove the output folder when no records were harvested
+- `ometha gui` subcommand launches the GUI — replaces the separate `ometha-gui` entry point, enabling `uvx ometha gui`
+
+### Fixed
+- `conf` mode: date keys `from-Datum`/`until-Datum` and `fromdate`/`untildate` are now validated and resolved through the same path as CLI dates — invalid values exit with an actionable error message instead of being silently ignored
+- `conf` mode: `outputfolder: null` in YAML config now correctly falls back to the current working directory
+- Missing IDs no longer treated as a critical error
+- `PRM["mode"]` was not set in CLI mode, causing potential downstream issues
+
+### Changed
+- Invalid date input now exits immediately with a descriptive error message
+- Removed unused `running_mode` variable in `main.py`
+- Ruff linting (`--fix`) added to pre-commit hook
+
+---
+
 ## [2.0.0] – 2026-03-27
 
 ### Added
