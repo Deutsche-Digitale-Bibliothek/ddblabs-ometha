@@ -3,10 +3,11 @@ import os
 import re
 import sys
 import time
-from collections import defaultdict
+import threading
+from collections import defaultdict, deque
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
-from multiprocessing.dummy import Pool as ThreadPool
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -156,6 +157,25 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
     :return: tuple with failed_download, failed_ids ID-Lists
     """
 
+    def get_subfolder(base_folder: str, index: int, batch_size: int = 10_000) -> str:
+        """Gibt den Unterordner für eine Datei anhand ihres Index zurück.
+
+        Teilt die Downloads in Unterordner à batch_size Dateien auf,
+        z.B. part_0001, part_0002 usw.
+
+        Args:
+            base_folder: Basisordner für alle Downloads.
+            index: Laufender Index der aktuellen Datei (0-basiert).
+            batch_size: Maximale Anzahl von Dateien pro Unterordner.
+
+        Returns:
+            Pfad des Unterordners (wird bei Bedarf angelegt).
+        """
+        batch_num = index // batch_size + 1
+        subfolder = os.path.join(base_folder, f"part_{batch_num:04d}")
+        os.makedirs(subfolder, exist_ok=True)
+        return subfolder
+
     def save_file(oai_id: str, folder: str, response: str, export_type: str) -> bool:
         """Save an OAI record response to a file in the given folder.
 
@@ -185,19 +205,21 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
                 of.write(response)
             return True
 
-    def get_response_text_from_url(url: str, session: Session, folder: str, export_type: str) -> dict[str, str] | None:
+    def get_response_text_from_url(url_with_index: tuple[str, int], session: Session, folder: str, export_type: str) -> dict[str, str] | None:
         """
         Downloads the content from the given URL and saves it to a file.
 
         Parameters:
-        url (str): The URL to download the content from.
+        url_with_index (tuple[str, int]): The URL and its index in the overall download list.
         session (requests.Session): The session to use for the download.
-        folder (str): The folder to save the downloaded content in.
+        folder (str): The base folder; files are saved into numbered subfolders of 10,000 each.
         export_type (str): The type of the export (used to determine if saved as XML or JSON).
 
         Returns (only in case of an error):
         dict: A dictionary containing the id of the failed download or failed id in case of an error.
         """
+        url, index = url_with_index
+        target_folder = get_subfolder(folder, index)
         oai_id = parse_qs(urlparse(url).query)["identifier"][0]
         try:
             with session.get(url) as resp:
@@ -207,7 +229,7 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
                 if errors := re.findall(r'error\scode="(.+)">(.+)</error>', resp.text):
                     logger.warning(f"Datei {url} konnte nicht geharvestet werden ('{errors[0][0]}')")
                     return {"failed_download": oai_id}
-                if not save_file(oai_id, folder, resp.text, export_type):
+                if not save_file(oai_id, target_folder, resp.text, export_type):
                     return {"failed_download": oai_id}
         except RequestException as e:
             logger.warning(f"Datei {url} wurde aufgrund eines {type(e).__name__} übersprungen: {e}")
@@ -218,26 +240,145 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
     else:
         log_critical_and_print_and_exit(f"{SEP_LINE}Keine Identifier bekommen, breche ab.", PRM["mode"])
 
-    urls = [PRM["b_url"] + "?verb=GetRecord&metadataPrefix=" + PRM["pref"] + "&identifier=" + str(id) for id in ids]
+    urls = [
+        (PRM["b_url"] + "?verb=GetRecord&metadataPrefix=" + PRM["pref"] + "&identifier=" + str(id), index)
+        for index, id in enumerate(ids)
+    ]
 
-    with ThreadPool(PRM["n_procs"]) as pool:
-        failed_oaiids = list(
-            tqdm(
-                pool.imap(
-                    partial(
-                        get_response_text_from_url,
-                        session=session,
-                        folder=folder,
-                        export_type=PRM["exp_type"],
-                    ),
-                    urls,
-                ),
-                total=len(urls),
-                desc=r"Harveste...",
-                unit="files",
-                dynamic_ncols=True,
+    # ------------------------------------------------------------------ #
+    # Adaptiver Worker-Pool                                                #
+    #                                                                      #
+    # Ein Steuer-Thread misst alle MEASURE_INTERVAL Sekunden den          #
+    # Durchsatz (Dateien/s) über ein gleitendes Fenster der letzten       #
+    # WINDOW_SIZE Messungen und passt die Worker-Anzahl an:               #
+    #   - Durchsatz gestiegen  → Worker erhöhen (max. 100)                #
+    #   - Durchsatz gesunken   → Worker reduzieren (min. 1)               #
+    #   - Durchsatz stabil     → keine Änderung                           #
+    #                                                                      #
+    # Da ThreadPoolExecutor keine direkte Größenänderung unterstützt,     #
+    # wird die gewünschte Parallelität über ein threading.Semaphore        #
+    # gesteuert: jeder Worker-Thread muss vor dem Request ein Slot         #
+    # belegen und gibt ihn danach frei.                                    #
+    # ------------------------------------------------------------------ #
+
+    MEASURE_INTERVAL = 5      # Sekunden zwischen zwei Messungen
+    WINDOW_SIZE      = 4      # Anzahl der Messungen im gleitenden Fenster
+    STEP_UP          = 2      # Worker-Erhöhung bei verbessertem Durchsatz
+    STEP_DOWN        = 1      # Worker-Reduzierung bei verschlechtertem Durchsatz
+    THROUGHPUT_TOL   = 0.05   # ±5 % gelten als "stabil" (keine Änderung)
+    MAX_WORKERS      = min(PRM["n_procs"], 100)
+    MIN_WORKERS      = 1
+
+    n_workers        = MAX_WORKERS
+    semaphore        = threading.Semaphore(n_workers)
+    lock             = threading.Lock()      # schützt n_workers + semaphore
+    stop_event       = threading.Event()
+    completed        = threading.local()     # thread-lokaler Zähler (nicht genutzt)
+    done_count       = [0]                   # [0] → mutierbare Referenz aus Closure
+    throughput_window: deque[float] = deque(maxlen=WINDOW_SIZE)
+    worker_snapshots: list[int] = [n_workers]  # Worker-Anzahl nach jeder Messung
+
+    def adaptive_controller() -> None:
+        """Beobachtet den Durchsatz und passt n_workers + Semaphore laufend an."""
+        nonlocal n_workers
+        last_done = 0
+        last_time = time.monotonic()
+
+        while not stop_event.is_set():
+            stop_event.wait(timeout=MEASURE_INTERVAL)
+            if stop_event.is_set():
+                break
+
+            now      = time.monotonic()
+            elapsed  = now - last_time or 1e-9
+            current  = done_count[0]
+            delta    = current - last_done
+
+            throughput = delta / elapsed          # Dateien / Sekunde
+            throughput_window.append(throughput)
+            last_done = current
+            last_time = now
+
+            if len(throughput_window) < 2:
+                continue                          # noch zu wenig Daten
+
+            avg_prev = sum(list(throughput_window)[:-1]) / (len(throughput_window) - 1)
+            avg_now  = throughput_window[-1]
+
+            if avg_prev == 0:
+                continue
+
+            change = (avg_now - avg_prev) / avg_prev   # relative Änderung
+
+            with lock:
+                old = n_workers
+                if change > THROUGHPUT_TOL and n_workers < MAX_WORKERS:
+                    # Durchsatz besser → mehr Worker
+                    delta_w = min(STEP_UP, MAX_WORKERS - n_workers)
+                    n_workers += delta_w
+                    for _ in range(delta_w):
+                        semaphore.release()
+                    logger.info(
+                        f"[AdaptivePool] Durchsatz ↑ {avg_now:.2f} f/s "
+                        f"(+{change*100:.1f}%) → Worker {old} → {n_workers}"
+                    )
+                elif change < -THROUGHPUT_TOL and n_workers > MIN_WORKERS:
+                    # Durchsatz schlechter → weniger Worker
+                    delta_w = min(STEP_DOWN, n_workers - MIN_WORKERS)
+                    n_workers -= delta_w
+                    # Slots entziehen: beim nächsten acquire() greift die neue Zahl
+                    for _ in range(delta_w):
+                        semaphore.acquire(blocking=False)
+                    logger.info(
+                        f"[AdaptivePool] Durchsatz ↓ {avg_now:.2f} f/s "
+                        f"({change*100:.1f}%) → Worker {old} → {n_workers}"
+                    )
+                else:
+                    logger.debug(
+                        f"[AdaptivePool] Durchsatz stabil {avg_now:.2f} f/s "
+                        f"({change*100:+.1f}%) → Worker bleibt {n_workers}"
+                    )
+                worker_snapshots.append(n_workers)
+
+    def throttled_download(url_with_index: tuple[str, int]) -> dict[str, str] | None:
+        """Wrapper: belegt einen Semaphore-Slot, führt den Download durch, gibt ihn frei."""
+        semaphore.acquire()
+        try:
+            result = get_response_text_from_url(
+                url_with_index,
+                session=session,
+                folder=folder,
+                export_type=PRM["exp_type"],
             )
-        )
+            with lock:
+                done_count[0] += 1
+            return result
+        finally:
+            semaphore.release()
+
+    controller_thread = threading.Thread(target=adaptive_controller, daemon=True)
+    controller_thread.start()
+    logger.info(f"[AdaptivePool] Start mit {n_workers} Workern (max. {MAX_WORKERS})")
+
+    failed_oaiids: list[dict[str, str] | None] = []
+    # MAX_WORKERS Threads im Pool – die effektive Parallelität regelt das Semaphore
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = {executor.submit(throttled_download, u): u for u in urls}
+        with tqdm(total=len(urls), desc="Harveste...", unit="files", dynamic_ncols=True) as pbar:
+            for future in as_completed(futures):
+                failed_oaiids.append(future.result())
+                pbar.update(1)
+                with lock:
+                    pbar.set_postfix(workers=n_workers)
+
+    stop_event.set()
+    controller_thread.join(timeout=MEASURE_INTERVAL + 1)
+
+    w_min  = min(worker_snapshots)
+    w_max  = max(worker_snapshots)
+    w_avg  = sum(worker_snapshots) / len(worker_snapshots)
+    stats_msg = f"[AdaptivePool] Worker-Statistik: min. {w_min}, max. {w_max}, Ø {w_avg:.1f} Threads"
+    print_and_log(stats_msg, logger, "info")
 
     failed_files = defaultdict(list)
     for subdict in failed_oaiids:
