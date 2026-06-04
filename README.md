@@ -1,93 +1,324 @@
-# Ometha
+# Ometha (*OaiMETadataHArvester*)
 
+# Features
 
+Die zentrale Anforderung für Workflow der Fachstelle Bibliothek ist, dass jeder OAI-Record in einer eigene Datei ist, mit eigenem OAI-Header. Das lässt sich theoretisch auch mit „normalem“ Harvesting erreichen (in dem man die XML Dateien nach dem Harvestingvorgang splittet), wir haben uns aber auch aus Gründen der Stabilität der Schnittstellen dafür entschieden, über das Verb `ListIdentifiers` zunächst alle relevanten OAI-IDs zu harvesten und dann per `GetRecord` die einzelnen Datensätze einen nach dem anderen anzuziehen.
 
-## Getting started
+Die zweite Anforderung an den Harvester ist der Spagat zwischen der Möglichkeit der Automatisierung und Benutzerfreundlichkeit. Daher umfasst Ometha drei Modi:
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+- einen „interaktiven“ Modus, der den Benutzer nach den Variablen fragt - nutzbar als Ometha.exe per Doppelklick unter Windows; keine Installation nötig
+- Kommandozeilenmodus mit Parameter-Übergabe
+- Kommandozeilenmodus per Konfigurationsdatei(en) inkl. vollautomatischem Update-Modus
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+## Geschwindigkeit
 
-## Add your files
+Harvesting eines Sets mit 19999 Datensätzen von der OAI Schnittstelle der Deutschen Digitalen Bibliothek:
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+1. Ometha
+   - `ometha default -b https://oai.deutsche-digitale-bibliothek.de/ -s 10443700598299947xcYN -m ddb`
+   - 6:19 Minuten -> Log, ID List & jeder Record in einer XML Datei
+2. [Metha](https://github.com/miku/metha):
+   - `metha-sync https://oai.deutsche-digitale-bibliothek.de/ -set 10443700598299947xcYN -format ddb`
+   - 6:33 Minuten -> gzipped XMLs mit jeweils 300 Records pro File (Abruf über ListRecords)
+   See https://github.com/Deutsche-Digitale-Bibliothek/ddblabs-ometha/issues/3 !
+3. [oai-pmh](https://github.com/paperhive/oai-pmh):
+   - `oai-pmh list-records -s 10443700598299947xcYN -p ddb https://oai.deutsche-digitale-bibliothek.de/ > ddbfiles.txt`
+   - 13:17 Minuten -> JSON statt XML Return
+4. [shell-oaiharvester](https://github.com/wimmuskee/shell-oaiharvester):
+   - `./oaiharvester -r ddb`
+   - 2:19:50 Stunden -> Plaintext Dateien ohne Dateiendung
 
+# Installation
+
+## Empfohlen: uvx
+
+Kein vorheriges Installieren nötig – `uv` richtet automatisch eine isolierte Umgebung ein:
+
+```bash
+uvx ometha
 ```
-cd existing_repo
-git remote add origin https://gitlab.gwdg.de/met-sub/ometha.git
-git branch -M main
-git push -uf origin main
+
+Für dauerhafte Installation (einmalig, danach direkt als `ometha` aufrufbar):
+
+```bash
+uv tool install ometha
+ometha --version
 ```
 
-## Integrate with your tools
+## pip
 
-* [Set up project integrations](https://gitlab.gwdg.de/met-sub/ometha/-/settings/integrations)
+```bash
+pip install ometha
+```
 
-## Collaborate with your team
+## Ausführbare Datei (kein Python erforderlich)
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+Vorkompilierte `.exe` / Binaries für Windows, macOS und Linux:
+<https://github.com/Deutsche-Digitale-Bibliothek/ddblabs-ometha/releases>
 
-## Test and Deploy
+## Aus dem Quellcode
 
-Use the built-in continuous integration in GitLab.
+```bash
+git clone git@github.com:Deutsche-Digitale-Bibliothek/ddblabs-ometha.git
+cd ddblabs-ometha
+uv sync
+uv run ometha --version
+```
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+## Windows: SmartScreen
 
-***
+Sollte Windows SmartScreen unter Windows 10 die Ausführung von `Ometha.exe` verhindern:
 
-# Editing this README
+![Windows SmartScreen](assets/windows_smartscreen.png)
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+... klickt man auf den etwas unscheinbaren Link "Weitere Informationen" und dann erscheint ein kurzer Text und links neben dem Button "Nicht ausführen" der Button "Trotzdem ausführen". Letzterer startet das Programm.
 
-## Suggestions for a good README
+# Interaktiver Modus
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+Der Benutzer wird zur Eingabe der erforderlichen und optionalen Parameter gebeten, die Eingaben werden validiert, mehrere Sets werden kommagetrennt eingegeben: `Seteins,Setzwei`.
 
-## Name
-Choose a self-explaining name for your project.
+Die Sonderfunktion "Anzeige aller auf der Schnittstelle vorgandener Sets" parst ListSets und ListIdentifiers rekursiv, um eine Übersicht aller vorhandenen Sets und Metadata-Prefixe zu generieren:
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+![Info Modus](assets/infomode.png)
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+# GUI Modus
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+Ometha enthält einen grafischen Modus auf Basis von [NiceGUI](https://nicegui.io/), der im Browser läuft und keine Kommandozeile erfordert.
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+## Starten
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+```bash
+ometha gui
+```
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+Der Browser öffnet sich automatisch unter `http://localhost:8765`.
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+## Bedienung
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+### Pflichtfelder
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+| Feld                | Beschreibung                                     |
+|---------------------|--------------------------------------------------|
+| **Base-URL**        | URL der OAI-PMH-Schnittstelle                    |
+| **Metadata Prefix** | Metadaten-Format (z. B. `oai_dc`, `mets`, `ddb`) |
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+Nach dem Verlassen des Base-URL-Felds (oder per Klick auf den Globus-Button neben dem Feld) lädt Ometha automatisch die verfügbaren Metadata-Prefixe und Sets von der Schnittstelle und befüllt die entsprechenden Felder.
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+### Optionale Felder
 
-## License
-For open source projects, say how it is licensed.
+| Feld                      | Beschreibung                                                            |
+|---------------------------|-------------------------------------------------------------------------|
+| **Datengeber**            | Name des Ausgabeordners (Standard: Zeitstempel)                         |
+| **Ausgabeordner**         | Zielverzeichnis; über den Ordner-Button kann ein Dialog geöffnet werden |
+| **Set(s)**                | Ein oder mehrere Sets (Mehrfachauswahl möglich)                         |
+| **Von-Datum / Bis-Datum** | ISO8601-Zeitraum (YYYY-MM-DD); über das Kalender-Icon auswählbar        |
+| **Parallele Downloads**   | Anzahl gleichzeitiger `GetRecord`-Anfragen (Standard: 4)                |
+| **Timeout (s)**           | Wartezeit zwischen Anfragen in Sekunden (Standard: 0)                   |
+| **Exportformat**          | `xml` oder `json`                                                       |
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+### Harvesting starten
+
+Ein Klick auf **„Harvesting starten"** führt den zweistufigen Prozess aus (zuerst alle Identifier per `ListIdentifiers` sammeln, dann jede Datei per `GetRecord` herunterladen) und gibt den Fortschritt im Log-Bereich aus. Über **„Beenden"** wird die Anwendung nach einer Bestätigungsabfrage beendet.
+
+# Aufruf über die Kommandozeile (CLI Modus)
+
+**Information:** Es können sowohl die ausführbare Datei als auch das Python-Script ausgeführt werden, zunächst muss aber in der Kommandozeile per `cd` Befehl in den Ordner gewechselt werden, in dem die Datei liegt (es sei denn, die Ausführbare Datei ist im PATH, also unter Linux bspw. in `/usr/bin`). Dann beginnt der Aufruf entweder mit `Ometha.exe` (Windows) oder mit `python Ometha.py` (Python Aufruf) bzw. mit `Ometha` (Unix). In den folgenden Beispielen muss also der Beginn ggf. ausgetauscht werden.
+
+Der Aufruf von Ometha kennt vier _"positional arguments"_, die die  Modi unterscheiden: `default`, `conf`, `auto` und `ids`. Je nach Modus werden dann weitere Argumente benötigt bzw. sind möglich.
+
+## *default* Harvesting
+
+- **Der "normale" (=default) Kommandozeilenmodus erwartet `default` als erstes Argument**
+- Die Angabe der URL der Schnittstelle per `-b` ist dabei immer zwingend notwendig
+- Ebenso die Angabe des Metadata-prefixes per `-m`.
+- Alle anderen Parameter sind optional
+
+
+Ein Kommandozeilenaufruf sieht dann bspw. so aus:
+
+```shell
+ometha default -b https://oai.schnittstelle.de -m metadataprefix -d ordnername -s set1 set2 -o /home/harvesting/
+```
+
+Optionale Parameter:
+
+- `-s/--set`: Angabe von Set(s), kommagetrennt: `-s Seteins,Setzwei`. Mit `/` lässt sich eine Schnittmenge bilden: `-s SetA,SetB/SetC` harvestet alle Records aus SetA und SetB, die auch in SetC vorkommen.
+- `-t/--timeout`: Timeout zwischen den GetRecord-Anfragen in Sekunden (nur für instabile Schnittstellen)
+- `-o/--outputfolder`: Ordner, in dem der Datenpartner-Ordner erzeugt wird
+- `-d/--datengeber`: Name des Datenpartner-Ordners
+- `-f/--fromdate`: Harvesting von OAI-Records ab diesem Zeitpunkt. Akzeptiert ISO8601 (`2024-01-15`, `2024-01-15T10:00:00Z`) oder natürlichsprachige Angaben (`1d`, `6h`, `20m`, `3w`, `1mo`)
+- `-u/--untildate`: Harvesting von OAI-Records bis zu diesem Zeitpunkt. Gleiche Formate wie `-f`
+- `--resumptiontoken`: ResumptionToken, falls das Identifier-Harvesting abgebrochen war ([keine Kurzform!](#errorhandling-abbruch-beim-harvesten-der-oai-identifier))
+- `-p/--parallel`: Parallele Downloads via `GetRecord` (Standard: automatisch basierend auf ID-Anzahl, max. 100)
+- `-e/--exporttype`: Exportformat `xml` (Standard) oder `json`
+- `--debug`: Debugging aktivieren (verboser Output)
+
+## Harvesten mit Konfigurationsdateien (`config`)
+
+Ometha unterstützt Harvesting über Konfigurationsdateien. So können Harvestingvorgänge komplett automatisiert werden und auch per cronjob o. ä. aufgerufen werden. Beim Aufruf mit dem _positional_ Argument `conf` und dem Argument `-c` mit dem Pfad zu einer entsprechenden Konfigurationsdatei (`ometha conf -c /pfad/zur/konfigurationsdatei.yaml`) werden alle Parameter aus einer YAML Datei gelesen:
+
+```shell
+ometha conf -c saarland.yaml
+```
+
+Mit dem optionalen Parameter `-a` bzw. `--auto` wird der **Automatikmodus** aktiviert: Beim Start wird `until-Datum` auf den aktuellen Zeitpunkt gesetzt, nach erfolgreichem Harvesting wird `from-Datum` aktualisiert. Beim nächsten Lauf ist damit automatisch der Zeitraum seit dem letzten Harvesting eingestellt. Ometha verwendet dabei das vollständige Datetime-Format (`YYYY-MM-DDThh:mm:ssZ`), sofern die Schnittstelle das unterstützt.
+
+Beispiel für eine Konfigurationsdatei:
+
+```yaml
+baseurl: https://digital.sulb.uni-saarland.de/viewer/oai/
+metadataPrefix: mets
+datengeber: SULB
+sets:
+  - hk
+# Mehrere Sets (alle additiv – Schnittmengen nur per CLI mit `/`-Syntax möglich):
+# sets:
+#   - Seteins
+#   - Setzwei
+# Kein Set-Filter:
+# sets: null
+# Manuell gesetzte Zeitgrenzen (werden von --auto nicht überschrieben,
+# solange from-Datum/until-Datum nicht vorhanden sind):
+fromdate: '2020-02-13'
+untildate: null
+timeout: 0
+outputfolder: null
+debug: false
+# Anzahl paralleler Downloads (optional, default: automatisch basierend auf ID-Anzahl):
+# numberofprocesses: 8
+```
+
+Pflichtfelder sind `baseurl` und `metadataPrefix`. Der Key `debug` nimmt nur `true` und `false` an, `timeout` nur Zahlen. Datumswerte können als String (`'2024-01-15'`) oder als ISO8601-Datetime (`'2024-01-15T10:00:00Z'`) angegeben werden. Alle anderen Keys sind optional und können `null` sein.
+
+Im `--auto`-Modus verwaltet Ometha zusätzlich die Keys `from-Datum` und `until-Datum` (mit Bindestrich) direkt in der Konfigurationsdatei. Diese haben Vorrang vor `fromdate`/`untildate`.
+
+Kommandozeilen-Parameter für den `conf`-Modus:
+
+```shell
+usage: ometha conf [-h] --conf CONF [--auto] [--no-log] [--cleanup-on-empty]
+                   [--exporttype EXPORTTYPE] [--debug]
+
+optional arguments:
+  -h, --help                    show this help message and exit
+  --conf CONF, -c CONF          Pfad zur YAML-Konfigurationsdatei
+  --auto, -a                    Automatischer Modus: from-/until-Datum wird nach
+                                jedem Lauf in der Konfigurationsdatei aktualisiert
+  --no-log                      Kein Logfile anlegen (für Cron-Betrieb mit
+                                externem Logging empfohlen)
+  --cleanup-on-empty            Ausgabeordner löschen wenn keine Datensätze
+                                geharvestet wurden
+  --exporttype, -e              Exportformat: xml (Standard) oder json
+  --debug                       Verboser Output
+```
+
+
+## Automatisierung mit Cron-Jobs
+
+Der `conf`-Modus mit `--auto` eignet sich ideal für vollautomatisches, regelmäßiges Harvesting – zum Beispiel als stündlicher oder täglicher Cron-Job. Ometha verwaltet dabei die Zeitfenster automatisch: Nach jedem Lauf wird `from-Datum` auf den aktuellen Zeitpunkt gesetzt, sodass beim nächsten Lauf exakt der neue Zeitraum geharvestet wird.
+
+### Konfigurationsdatei für automatisches Harvesting
+
+```yaml
+# /etc/ometha/sulb.yaml
+baseurl: https://digital.sulb.uni-saarland.de/viewer/oai/
+metadataPrefix: mets
+datengeber: SULB
+sets:
+  - hk
+outputfolder: /data/harvest
+timeout: 5
+debug: false
+# Wird von Ometha automatisch verwaltet (--auto):
+from-Datum: '2026-01-01T00:00:00Z'
+until-Datum: null
+```
+
+Die Schlüssel `from-Datum` und `until-Datum` werden von Ometha im Auto-Modus automatisch nach jedem Lauf aktualisiert. Alternativ können `fromdate` und `untildate` (ohne Bindestrich) für manuell gesetzte Zeitgrenzen verwendet werden.
+
+### Stündlicher Cron-Job
+
+```cron
+# Jede Stunde zur vollen Stunde – neue Records seit dem letzten Lauf harvesten
+0 * * * * ometha conf -c /etc/ometha/sulb.yaml --auto --no-log --cleanup-on-empty >> /var/log/ometha-sulb.log 2>&1
+```
+
+- `--auto`: Aktualisiert `from-Datum`/`until-Datum` in der Konfigurationsdatei automatisch
+- `--no-log`: Kein separates Logfile im Ausgabeordner (der Cron-Job leitet stdout/stderr selbst in `/var/log/ometha-sulb.log`)
+- `--cleanup-on-empty`: Leere Zeitstempel-Ordner werden gelöscht, wenn in der Periode keine neuen Records vorhanden waren – verhindert das Ansammeln leerer Verzeichnisse
+
+### Täglicher Cron-Job
+
+```cron
+# Täglich um 02:00 Uhr nachts
+0 2 * * * ometha conf -c /etc/ometha/sulb.yaml --auto --no-log --cleanup-on-empty >> /var/log/ometha-sulb.log 2>&1
+```
+
+### Hinweis zur OAI-PMH-Granularität
+
+OAI-PMH unterstützt zwei Datums-Granularitäten: `YYYY-MM-DD` (nur Datum) und `YYYY-MM-DDThh:mm:ssZ` (mit Uhrzeit). Ometha schreibt im Auto-Modus immer das vollständige Datetime-Format (`2026-03-28T10:00:00Z`). Ob eine Schnittstelle Datetime-Granularität unterstützt, steht in deren `Identify`-Response unter `granularity`. Bei reinen Datums-Schnittstellen ist ein täglicher Cron-Job sinnvoller als ein stündlicher.
+
+---
+
+## `auto`-Modus
+
+Liest alle Parameter aus einer vollständigen OAI-URL. Einziger Pflichtparameter ist `-u`:
+
+```shell
+ometha auto -u "https://digital.sulb.uni-saarland.de/viewer/oai/?verb=ListIdentifiers&metadataPrefix=mets&until=2021-01-01&set=saarlandica"
+```
+
+```shell
+usage: ometha auto [-h] --url URL [--parallel PARALLEL] [--timeout TIMEOUT]
+                   [--outputfolder OUTPUTFOLDER] [--exporttype EXPORTTYPE] [--debug]
+
+optional arguments:
+  -h, --help                      show this help message and exit
+  --url URL, -u URL               Vollständige OAI-URL mit Parametern
+  --parallel PARALLEL, -p         Parallele Downloads (Standard: automatisch)
+  --timeout TIMEOUT, -t           Timeout in Sekunden (Standard: 0)
+  --outputfolder OUTPUTFOLDER, -o Ausgabeordner
+  --exporttype EXPORTTYPE, -e     Exportformat: xml oder json (Standard: xml)
+  --debug                         Verboser Output
+```
+
+## `ids`: Harvesten einer ID-Liste
+
+Für den Fall, dass eine bereits mit Ometha erstellte ID-Liste erneut geharvestet werden soll:
+
+```shell
+ometha ids -i _ometha_successful_ids.yaml
+```
+
+```shell
+usage: ometha ids [-h] --idfile IDFILE [--datengeber DATENGEBER]
+                  [--parallel PARALLEL] [--timeout TIMEOUT]
+                  [--outputfolder OUTPUTFOLDER] [--exporttype EXPORTTYPE] [--debug]
+
+optional arguments:
+  -h, --help                      show this help message and exit
+  --idfile IDFILE, -i IDFILE      Pfad zur ID-YAML-Datei
+  --datengeber DATENGEBER, -d     Datenpartner-Ordnername (Standard: Zeitstempel)
+  --parallel PARALLEL, -p         Parallele Downloads (Standard: automatisch)
+  --timeout TIMEOUT, -t           Timeout in Sekunden (Standard: 0)
+  --outputfolder OUTPUTFOLDER, -o Ausgabeordner
+  --exporttype EXPORTTYPE, -e     Exportformat: xml oder json (Standard: xml)
+  --debug                         Verboser Output
+```
+
+## Errorhandling: Abbruch beim Harvesten der OAI-Identifier
+
+Während des ID-Harvestings speichert Ometha automatisch alle 1000 IDs einen Checkpoint: Die aktuelle `resumptionToken` wird in `resumption_token_latest.txt` im Ausgabeordner geschrieben. Bei einem Verbindungsabbruch wird zusätzlich eine zeitgestempelte Datei `resumption_token_<timestamp>.txt` angelegt.
+
+Falls beim Harvesten der OAI-IDs etwas schief geht, reicht es, sich den letzten angezeigten Resumption-Token zu notieren (bzw. in der Checkpoint-Datei oder Log-Datei zu schauen) und Ometha dann mit dem zusätzlichen Parameter `--resumptiontoken=resumptiontoken` auszuführen bzw. beim interaktiven Modus die Option `[R]` zu wählen:
+
+```shell
+ometha default -b https://oai.schnittstelle.de -m metadataprefix -d ordnername --resumptiontoken=nEk0tn0itpmuser
+```
+
+(Hier ist darauf zu achten, dass man immer `--resumptiontoken=` nutzt, da es durchaus ResumptionTokens gibt, die mit einem Bindestrich anfangen und somit im Kommandozeilenmodus als neuer Parameter verstanden würden, wenn man `--resumptiontoken -1dsada-2wdss` eingeben würde. Die verkürzte Option `-r` ist daher auch deaktiviert.)
+
+# Konfigurationsdatei
+
+Beim Start von Ometha wird überprüft, ob eine `ometha.yaml` Einstellungsdatei vorhanden ist. Ist das nicht der Fall, kann diese von Ometha erzeugt werden. Bislang (Version 1.8) wird darüber nur der [User-Agent](https://en.wikipedia.org/wiki/User_agent#Use_in_HTTP) konfiguriert.
+
+Die Datei wird unter Windows neben der ausgeführten Ometha-Datei abgelegt (`ometha.yaml`), in Linux und macOS als versteckte Datei direkt im Home-Verzeichnis des Benutzers (`~/.ometha`).

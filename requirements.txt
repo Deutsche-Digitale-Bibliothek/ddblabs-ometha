@@ -1,0 +1,11 @@
+colorama
+loguru
+lxml
+progress
+PyYAML
+requests
+urllib3
+halo
+pretty_errors
+aiohttp
+p_tqdm
