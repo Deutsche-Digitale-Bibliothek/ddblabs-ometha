@@ -88,7 +88,7 @@ Ometha enthält einen grafischen Modus auf Basis von [NiceGUI](https://nicegui.i
 ## Starten
 
 ```bash
-ometha gui
+uv run ometha gui
 ```
 
 Der Browser öffnet sich automatisch unter `http://localhost:8765`.
@@ -137,7 +137,7 @@ Der Aufruf von Ometha kennt vier _"positional arguments"_, die die  Modi untersc
 Ein Kommandozeilenaufruf sieht dann bspw. so aus:
 
 ```shell
-ometha default -b https://oai.schnittstelle.de -m metadataprefix -d ordnername -s set1 set2 -o /home/harvesting/
+uv run ometha default -b https://oai.schnittstelle.de -m metadataprefix -d ordnername -s set1 set2 -o /home/harvesting/
 ```
 
 Optionale Parameter:
@@ -155,10 +155,10 @@ Optionale Parameter:
 
 ## Harvesten mit Konfigurationsdateien (`config`)
 
-Ometha unterstützt Harvesting über Konfigurationsdateien. So können Harvestingvorgänge komplett automatisiert werden und auch per cronjob o. ä. aufgerufen werden. Beim Aufruf mit dem _positional_ Argument `conf` und dem Argument `-c` mit dem Pfad zu einer entsprechenden Konfigurationsdatei (`ometha conf -c /pfad/zur/konfigurationsdatei.yaml`) werden alle Parameter aus einer YAML Datei gelesen:
+Ometha unterstützt Harvesting über Konfigurationsdateien. So können Harvestingvorgänge komplett automatisiert werden und auch per cronjob o.ä. aufgerufen werden. Beim Aufruf mit dem _positional_ Argument `conf` und dem Argument `-c` mit dem Pfad zu einer entsprechenden Konfigurationsdatei (`ometha conf -c /pfad/zur/konfigurationsdatei.yaml`) werden alle Parameter aus einer YAML Datei gelesen:
 
 ```shell
-ometha conf -c saarland.yaml
+uv run ometha conf -c saarland.yaml
 ```
 
 Mit dem optionalen Parameter `-a` bzw. `--auto` wird der **Automatikmodus** aktiviert: Beim Start wird `until-Datum` auf den aktuellen Zeitpunkt gesetzt, nach erfolgreichem Harvesting wird `from-Datum` aktualisiert. Beim nächsten Lauf ist damit automatisch der Zeitraum seit dem letzten Harvesting eingestellt. Ometha verwendet dabei das vollständige Datetime-Format (`YYYY-MM-DDThh:mm:ssZ`), sofern die Schnittstelle das unterstützt.
@@ -286,11 +286,11 @@ optional arguments:
 Für den Fall, dass eine bereits mit Ometha erstellte ID-Liste erneut geharvestet werden soll:
 
 ```shell
-ometha ids -i _ometha_successful_ids.yaml
+uv run ometha ids -i _ometha_successful_ids.yaml
 ```
 
 ```shell
-usage: ometha ids [-h] --idfile IDFILE [--datengeber DATENGEBER]
+usage: uv run ometha ids [-h] --idfile IDFILE [--datengeber DATENGEBER]
                   [--parallel PARALLEL] [--timeout TIMEOUT]
                   [--outputfolder OUTPUTFOLDER] [--exporttype EXPORTTYPE] [--debug]
 
@@ -312,7 +312,7 @@ Während des ID-Harvestings speichert Ometha automatisch alle 1000 IDs einen Che
 Falls beim Harvesten der OAI-IDs etwas schief geht, reicht es, sich den letzten angezeigten Resumption-Token zu notieren (bzw. in der Checkpoint-Datei oder Log-Datei zu schauen) und Ometha dann mit dem zusätzlichen Parameter `--resumptiontoken=resumptiontoken` auszuführen bzw. beim interaktiven Modus die Option `[R]` zu wählen:
 
 ```shell
-ometha default -b https://oai.schnittstelle.de -m metadataprefix -d ordnername --resumptiontoken=nEk0tn0itpmuser
+uv run ometha default -b https://oai.schnittstelle.de -m metadataprefix -d ordnername --resumptiontoken=nEk0tn0itpmuser
 ```
 
 (Hier ist darauf zu achten, dass man immer `--resumptiontoken=` nutzt, da es durchaus ResumptionTokens gibt, die mit einem Bindestrich anfangen und somit im Kommandozeilenmodus als neuer Parameter verstanden würden, wenn man `--resumptiontoken -1dsada-2wdss` eingeben würde. Die verkürzte Option `-r` ist daher auch deaktiviert.)
