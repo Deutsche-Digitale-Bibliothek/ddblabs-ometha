@@ -55,12 +55,13 @@ def generate_id_harvesting_url(PRM: dict, set: str, session: requests.Session) -
         A list of all OAI identifier strings found at the endpoint.
     """
     urlpar = {"from": "f_date", "until": "u_date", "metadataPrefix": "pref"}
-    base_url = f"{PRM['b_url']}?verb=ListIdentifiers&"
+    base_url = f"{PRM['b_url']}?verb=ListIdentifiers"
     if PRM["res_tok"]:
         url = f"{base_url}&resumptionToken={PRM['res_tok']}"
         logger.info(f"Fortsetzen des Identifier-Harvestings bei: {re.sub('/$', '', url)}")
     else:
-        url = f"{base_url}{'&'.join(f'{name}={PRM[key]}' for name, key in urlpar.items() if PRM[key] is not None)}"
+        params = "&".join(f"{name}={PRM[key]}" for name, key in urlpar.items() if PRM[key] is not None)
+        url = f"{base_url}&{params}" if params else base_url
     if set:
         url = f"{url}&set={set}"
 
