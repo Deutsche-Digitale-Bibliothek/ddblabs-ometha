@@ -112,10 +112,13 @@ def get_identifier(
             if list_size and on_list_size:
                 on_list_size(int(list_size.group(1)))
 
-        # Token auslesen
-        token = root.findtext(f".//{NAMESPACE}resumptionToken")
-        if token:
+        # Token auslesen – leerer Tag (<resumptionToken/>) bedeutet letzte Seite
+        token = root.findtext(f".//{NAMESPACE}resumptionToken") or None
+        if token and token.strip():
+            token = token.strip()
             last_token = token
+        else:
+            token = None
         logger.info(f"Token: {token}") if PRM["debug"] else None
 
         # Die Objekte in listIdentifiers auslesen
