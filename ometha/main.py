@@ -40,6 +40,15 @@ from .helpers import (
 from .tui import interactiveMode
 
 
+def assert_status_hook(response, *args, **kwargs):
+    """Response hook that raises an HTTPError for 4xx/5xx status codes.
+
+    Defined at module level (not inside start_process) so it can be
+    pickled when the session is passed across process/thread boundaries.
+    """
+    response.raise_for_status()
+
+
 def generate_id_harvesting_url(PRM: dict, set: str, session: requests.Session) -> list[str]:
     """Build a ListIdentifiers URL from PRM parameters and return all harvested IDs.
 
@@ -56,6 +65,29 @@ def generate_id_harvesting_url(PRM: dict, set: str, session: requests.Session) -
     """
     urlpar = {"from": "f_date", "until": "u_date", "metadataPrefix": "pref"}
     base_url = f"{PRM['b_url']}?verb=ListIdentifiers"
+
+    # OAI-PMH-Spec §3.3: from und until müssen dieselbe Granularität haben.
+    # Enthält einer der Werte eine Uhrzeit (T…Z), beide auf Datetime-Granularität
+    # hochstufen; enthält keiner eine Uhrzeit, beide auf Datums-Granularität
+    # (YYYY-MM-DD) kürzen.
+    f, u = PRM.get("f_date"), PRM.get("u_date")
+    has_time = lambda d: d and "T" in str(d)
+    if f or u:
+        if has_time(f) or has_time(u):
+            # Datum ohne Zeit → Mitternacht UTC anhängen
+            if f and not has_time(f):
+                PRM["f_date"] = f"{f}T00:00:00Z"
+            if u and not has_time(u):
+                PRM["u_date"] = f"{u}T23:59:59Z"
+        else:
+            # Zeit abschneiden falls doch eine drin ist (defensiv)
+            if f:
+                PRM["f_date"] = str(f)[:10]
+            if u:
+                PRM["u_date"] = str(u)[:10]
+        if f != PRM["f_date"] or u != PRM["u_date"]:
+            logger.info(f"Datumsgranularität vereinheitlicht: from={PRM['f_date']} until={PRM['u_date']}")
+
     if PRM["res_tok"]:
         url = f"{base_url}&resumptionToken={PRM['res_tok']}"
         logger.info(f"Fortsetzen des Identifier-Harvestings bei: {re.sub('/$', '', url)}")
@@ -126,10 +158,8 @@ def start_process() -> None:
         )
     headers = {"User-Agent": headers["User-Agent"], "From": headers["From"]}
 
-    # Session konfigurieren
-    def assert_status_hook(response, *args, **kwargs):
-        response.raise_for_status()
-
+    # Session konfigurieren – kein response-Hook, damit der HTTPAdapter-Retry
+    # bei 429/5xx greifen kann ohne sofort eine HTTPError zu werfen.
     adapter = HTTPAdapter(
         max_retries=urllib3.util.retry.Retry(
             total=8,
@@ -139,7 +169,6 @@ def start_process() -> None:
         )
     )
     session = requests.Session()
-    session.hooks["response"].append(assert_status_hook)
     session.mount("https://", adapter)
     session.mount("http://", adapter)
     session.headers.update(headers)

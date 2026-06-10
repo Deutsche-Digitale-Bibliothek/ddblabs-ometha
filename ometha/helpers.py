@@ -127,13 +127,19 @@ def handle_error(e: Exception, mode: str | None, url: str | None = None) -> None
     error_messages = {
         Timeout: "Timeout determining list size. The API is not reachable.",
         RetryError: "Identifier harvesting aborted due to too many retries. Is the API reachable?",
-        HTTPError: "Identifier harvesting aborted due to an HTTP error.",
     }
     if type(e) is ConnectionError:
         if "404" in str(e):
             log_critical_and_print_and_exit("The API is not reachable. Is the URL correct?", mode)
         elif errors := re.findall(r"error\scode=['\"](.+)['\"]>(.*)<\\error", str(e)):
             log_critical_and_print_and_exit(f"{FEHLER} API error: {errors[0][0]}/{errors[0][1]} at {url}", mode)
+    elif type(e) is HTTPError:
+        status = e.response.status_code if e.response is not None else "unknown"
+        log_critical_and_print_and_exit(
+            f"Identifier harvesting aborted due to HTTP {status} at {url}.",
+            mode,
+            e,
+        )
     elif type(e) in error_messages:
         log_critical_and_print_and_exit(error_messages[type(e)], mode, e)
     else:
