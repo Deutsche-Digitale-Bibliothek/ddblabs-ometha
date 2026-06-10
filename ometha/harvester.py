@@ -73,6 +73,7 @@ def get_identifier(
         while retry_count < max_retries:
             try:
                 response = session.get(url, verify=False, timeout=(30, 120))
+                response.raise_for_status()
                 root = isinvalid_xml_content(response, url, PRM["mode"])
                 break  # Success, exit retry loop
             except Exception as e:
