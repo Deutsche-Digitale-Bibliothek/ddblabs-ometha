@@ -3,6 +3,24 @@
 All notable changes to Ometha are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+
+---
+
+## [2.1.0] – 2026-06-10
+
+### Added
+- Adaptive throttle mechanism measures the amount of harvested files per minute and adjusts the number of parallel downloads every 5 seconds.
+
+### Fixed
+- `conf` mode: remove `assert_status_hook` from `start_process` and move it a layer above in order to prevent incorrect pickling and referring to a then pickled internal function. 
+- `conf` mode: conflicting configuaration of assert_status_hook and the retry mechanism. The retry mechanism should trigger a retry in case of a 503 for example, but assert_status_hook was throwing an error before it had a chance to do so. Therefore, the hook was removed from the session and and a status check added right after the request.
+- `conf` mode with `--a`: a function was added to catch inconsistent date formats in YAML files. Both from date and until date either need to be date and time or just date, a mix of both is a violation of the OAI-PMH protocol. The function adds `T00:00:00Z` to the from date or `T23:59:59Z` to the until date in order to make sure both have the same level of granularity and Ometha harvests last days completely.
+
+### Changed
+- Harvested files are grouped into subfolders of 10,000 files each in order to preserve OS performance.
+
+---
+
 ---
 
 ## [2.1.0] – 2026-03-28
