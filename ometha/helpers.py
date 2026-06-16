@@ -41,6 +41,7 @@ PRM = {
     "auto_m": None,  # Automode: bool
     "out_f": None,  # outputfile: path
     "n_procs": None,  # number of parallel downloads: int
+    "max_timeout": None,  # hard ceiling for adaptive timeout in seconds: int
     "mode": None,  # mode: str "ui" or "cli"
     "exp_type": None,  # export type either "xml" or "json"
 }

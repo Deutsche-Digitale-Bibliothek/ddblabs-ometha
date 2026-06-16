@@ -210,34 +210,9 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
             return True
 
     def get_response_text_from_url(url_with_index: tuple[str, int], session: Session, folder: str, export_type: str) -> dict[str, str] | None:
-        """
-        Downloads the content from the given URL and saves it to a file.
-
-        Parameters:
-        url_with_index (tuple[str, int]): The URL and its index in the overall download list.
-        session (requests.Session): The session to use for the download.
-        folder (str): The base folder; files are saved into numbered subfolders of 10,000 each.
-        export_type (str): The type of the export (used to determine if saved as XML or JSON).
-
-        Returns (only in case of an error):
-        dict: A dictionary containing the id of the failed download or failed id in case of an error.
-        """
-        url, index = url_with_index
-        target_folder = get_subfolder(folder, index)
-        oai_id = parse_qs(urlparse(url).query)["identifier"][0]
-        try:
-            with session.get(url) as resp:
-                if resp.status_code != 200:
-                    logger.critical(f"Statuscode {resp.status_code} bei {url}")
-                    return {"failed_download": oai_id}
-                if errors := re.findall(r'error\scode="(.+)">(.+)</error>', resp.text):
-                    logger.warning(f"Datei {url} konnte nicht geharvestet werden ('{errors[0][0]}')")
-                    return {"failed_download": oai_id}
-                if not save_file(oai_id, target_folder, resp.text, export_type):
-                    return {"failed_download": oai_id}
-        except RequestException as e:
-            logger.warning(f"Datei {url} wurde aufgrund eines {type(e).__name__} übersprungen: {e}")
-            return {"failed_id": oai_id}
+        # Nicht mehr direkt aufgerufen – Logik steckt in throttled_download.
+        # Bleibt als Stub erhalten damit externe Referenzen nicht brechen.
+        pass
 
     if ids:
         print_and_log(f"{SEP_LINE}Harveste {len(ids)} IDs.", logger, "info")
@@ -265,25 +240,48 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
     # belegen und gibt ihn danach frei.                                    #
     # ------------------------------------------------------------------ #
 
+    # ------------------------------------------------------------------ #
+    # Gemeinsame Steuerparameter                                           #
+    # ------------------------------------------------------------------ #
     MEASURE_INTERVAL = 5      # Sekunden zwischen zwei Messungen
     WINDOW_SIZE      = 4      # Anzahl der Messungen im gleitenden Fenster
+    THROUGHPUT_TOL   = 0.05   # ±5 % gelten als "stabil" (keine Änderung)
+
+    # Worker-Pool
     STEP_UP          = 2      # Worker-Erhöhung bei verbessertem Durchsatz
     STEP_DOWN        = 1      # Worker-Reduzierung bei verschlechtertem Durchsatz
-    THROUGHPUT_TOL   = 0.05   # ±5 % gelten als "stabil" (keine Änderung)
     MAX_WORKERS      = min(PRM["n_procs"], 100)
     MIN_WORKERS      = 1
 
+    # Adaptiver Timeout
+    # Obergrenze: PRM["max_timeout"] wenn gesetzt, sonst 120 s.
+    # Untergrenze: der vom Nutzer übergebene PRM["timeout"] (default 0 = kein Timeout).
+    TIMEOUT_STEP     = 5      # Sekunden pro Anpassungsschritt
+    LATENCY_TOL      = 0.10   # ±10 % gelten als "stabil"
+    MIN_TIMEOUT      = PRM["timeout"] if PRM["timeout"] else 0
+    MAX_TIMEOUT      = int(PRM["max_timeout"]) if PRM.get("max_timeout") else 120
+
+    # Gemeinsamer Lock und Stop-Signal
+    lock             = threading.Lock()
+    stop_event       = threading.Event()
+
+    # Worker-Zustand
     n_workers        = MAX_WORKERS
     semaphore        = threading.Semaphore(n_workers)
-    lock             = threading.Lock()      # schützt n_workers + semaphore
-    stop_event       = threading.Event()
-    completed        = threading.local()     # thread-lokaler Zähler (nicht genutzt)
-    done_count       = [0]                   # [0] → mutierbare Referenz aus Closure
+    done_count       = [0]
     throughput_window: deque[float] = deque(maxlen=WINDOW_SIZE)
-    worker_snapshots: list[int] = [n_workers]  # Worker-Anzahl nach jeder Messung
+    worker_snapshots: list[int] = [n_workers]
+
+    # Timeout-Zustand
+    # Startwert: PRM["timeout"] wenn angegeben, sonst 0 (= kein Timeout).
+    # Der Controller erhöht ihn nur wenn nötig; bei 0 als Startwert beginnt
+    # er erst zu wirken sobald die erste Anpassung stattfindet.
+    current_timeout  = [float(MIN_TIMEOUT)]   # mutierbare Referenz aus Closure
+    latency_window:  deque[float] = deque(maxlen=WINDOW_SIZE * MAX_WORKERS)
+    timeout_snapshots: list[float] = [current_timeout[0]]
 
     def adaptive_controller() -> None:
-        """Beobachtet den Durchsatz und passt n_workers + Semaphore laufend an."""
+        """Beobachtet Durchsatz und Latenz; passt Worker-Anzahl und Timeout laufend an."""
         nonlocal n_workers
         last_done = 0
         last_time = time.monotonic()
@@ -293,79 +291,130 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
             if stop_event.is_set():
                 break
 
-            now      = time.monotonic()
-            elapsed  = now - last_time or 1e-9
-            current  = done_count[0]
-            delta    = current - last_done
+            now     = time.monotonic()
+            elapsed = now - last_time or 1e-9
+            current = done_count[0]
+            delta   = current - last_done
 
-            throughput = delta / elapsed          # Dateien / Sekunde
+            # ---- Durchsatz messen ----
+            throughput = delta / elapsed
             throughput_window.append(throughput)
             last_done = current
             last_time = now
 
-            if len(throughput_window) < 2:
-                continue                          # noch zu wenig Daten
-
-            avg_prev = sum(list(throughput_window)[:-1]) / (len(throughput_window) - 1)
-            avg_now  = throughput_window[-1]
-
-            if avg_prev == 0:
-                continue
-
-            change = (avg_now - avg_prev) / avg_prev   # relative Änderung
-
+            # ---- Latenz messen (Snapshot der aktuellen deque) ----
             with lock:
-                old = n_workers
-                if change > THROUGHPUT_TOL and n_workers < MAX_WORKERS:
-                    # Durchsatz besser → mehr Worker
-                    delta_w = min(STEP_UP, MAX_WORKERS - n_workers)
-                    n_workers += delta_w
-                    for _ in range(delta_w):
-                        semaphore.release()
-                    logger.info(
-                        f"[AdaptivePool] Durchsatz ↑ {avg_now:.2f} f/s "
-                        f"(+{change*100:.1f}%) → Worker {old} → {n_workers}"
-                    )
-                elif change < -THROUGHPUT_TOL and n_workers > MIN_WORKERS:
-                    # Durchsatz schlechter → weniger Worker
-                    delta_w = min(STEP_DOWN, n_workers - MIN_WORKERS)
-                    n_workers -= delta_w
-                    # Slots entziehen: beim nächsten acquire() greift die neue Zahl
-                    for _ in range(delta_w):
-                        semaphore.acquire(blocking=False)
-                    logger.info(
-                        f"[AdaptivePool] Durchsatz ↓ {avg_now:.2f} f/s "
-                        f"({change*100:.1f}%) → Worker {old} → {n_workers}"
-                    )
-                else:
-                    logger.debug(
-                        f"[AdaptivePool] Durchsatz stabil {avg_now:.2f} f/s "
-                        f"({change*100:+.1f}%) → Worker bleibt {n_workers}"
-                    )
-                worker_snapshots.append(n_workers)
+                latency_sample = list(latency_window)
+
+            # ---- Worker anpassen (wie bisher) ----
+            if len(throughput_window) >= 2:
+                avg_prev = sum(list(throughput_window)[:-1]) / (len(throughput_window) - 1)
+                avg_now  = throughput_window[-1]
+                if avg_prev > 0:
+                    change = (avg_now - avg_prev) / avg_prev
+                    with lock:
+                        old = n_workers
+                        if change > THROUGHPUT_TOL and n_workers < MAX_WORKERS:
+                            delta_w = min(STEP_UP, MAX_WORKERS - n_workers)
+                            n_workers += delta_w
+                            for _ in range(delta_w):
+                                semaphore.release()
+                            logger.info(
+                                f"[AdaptivePool] Durchsatz ↑ {avg_now:.2f} f/s "
+                                f"(+{change*100:.1f}%) → Worker {old} → {n_workers}"
+                            )
+                        elif change < -THROUGHPUT_TOL and n_workers > MIN_WORKERS:
+                            delta_w = min(STEP_DOWN, n_workers - MIN_WORKERS)
+                            n_workers -= delta_w
+                            for _ in range(delta_w):
+                                semaphore.acquire(blocking=False)
+                            logger.info(
+                                f"[AdaptivePool] Durchsatz ↓ {avg_now:.2f} f/s "
+                                f"({change*100:.1f}%) → Worker {old} → {n_workers}"
+                            )
+                        else:
+                            logger.debug(
+                                f"[AdaptivePool] Durchsatz stabil {avg_now:.2f} f/s "
+                                f"({change*100:+.1f}%) → Worker bleibt {n_workers}"
+                            )
+                        worker_snapshots.append(n_workers)
+
+            # ---- Timeout anpassen ----
+            # Nur anpassen wenn MAX_TIMEOUT > 0 (d.h. Feature aktiv) und
+            # genug Latenz-Messwerte vorliegen.
+            if MAX_TIMEOUT > 0 and len(latency_sample) >= 2:
+                # gleitender Median als robuste Latenz-Schätzung
+                sorted_lat  = sorted(latency_sample)
+                mid         = len(sorted_lat) // 2
+                median_lat  = (sorted_lat[mid - 1] + sorted_lat[mid]) / 2 if len(sorted_lat) % 2 == 0 else sorted_lat[mid]
+
+                # Vergleich mit dem vorherigen Timeout-Snapshot
+                prev_timeout = timeout_snapshots[-1] if timeout_snapshots else current_timeout[0]
+
+                # Heuristik: wenn der Median der Antwortzeiten mehr als
+                # LATENCY_TOL über dem aktuellen Timeout liegt → erhöhen;
+                # wenn er deutlich darunter liegt → senken (bis MIN_TIMEOUT).
+                with lock:
+                    old_t = current_timeout[0]
+                    if median_lat > old_t * (1 + LATENCY_TOL) and old_t < MAX_TIMEOUT:
+                        current_timeout[0] = min(old_t + TIMEOUT_STEP, MAX_TIMEOUT)
+                        logger.info(
+                            f"[AdaptiveTimeout] Latenz ↑ Median={median_lat:.2f}s "
+                            f"→ Timeout {old_t:.0f}s → {current_timeout[0]:.0f}s"
+                        )
+                    elif median_lat < old_t * (1 - LATENCY_TOL) and old_t > MIN_TIMEOUT:
+                        current_timeout[0] = max(old_t - TIMEOUT_STEP, MIN_TIMEOUT)
+                        logger.info(
+                            f"[AdaptiveTimeout] Latenz ↓ Median={median_lat:.2f}s "
+                            f"→ Timeout {old_t:.0f}s → {current_timeout[0]:.0f}s"
+                        )
+                    else:
+                        logger.debug(
+                            f"[AdaptiveTimeout] Latenz stabil Median={median_lat:.2f}s "
+                            f"→ Timeout bleibt {old_t:.0f}s"
+                        )
+                    timeout_snapshots.append(current_timeout[0])
 
     def throttled_download(url_with_index: tuple[str, int]) -> dict[str, str] | None:
-        """Wrapper: belegt einen Semaphore-Slot, führt den Download durch, gibt ihn frei."""
+        """Wrapper: belegt Semaphore-Slot, liest aktuellen Timeout, führt Download durch."""
         semaphore.acquire()
         try:
-            result = get_response_text_from_url(
-                url_with_index,
-                session=session,
-                folder=folder,
-                export_type=PRM["exp_type"],
-            )
+            with lock:
+                t = current_timeout[0] or None   # 0 → None = kein Timeout
+            t_start = time.monotonic()
+            url, index = url_with_index
+            target_folder = get_subfolder(folder, index)
+            oai_id = parse_qs(urlparse(url).query)["identifier"][0]
+            export_type = PRM["exp_type"]
+            try:
+                with session.get(url, timeout=t) as resp:
+                    elapsed = time.monotonic() - t_start
+                    with lock:
+                        latency_window.append(elapsed)
+                    if resp.status_code != 200:
+                        logger.critical(f"Statuscode {resp.status_code} bei {url}")
+                        return {"failed_download": oai_id}
+                    if errors := re.findall(r'error\scode="(.+)">(.+)</error>', resp.text):
+                        logger.warning(f"Datei {url} konnte nicht geharvestet werden ('{errors[0][0]}')")
+                        return {"failed_download": oai_id}
+                    if not save_file(oai_id, target_folder, resp.text, export_type):
+                        return {"failed_download": oai_id}
+            except RequestException as e:
+                logger.warning(f"Datei {url} wurde aufgrund eines {type(e).__name__} übersprungen: {e}")
+                return {"failed_id": oai_id}
             with lock:
                 done_count[0] += 1
-            return result
         finally:
             semaphore.release()
 
     controller_thread = threading.Thread(target=adaptive_controller, daemon=True)
     controller_thread.start()
-    logger.info(f"[AdaptivePool] Start mit {n_workers} Workern (max. {MAX_WORKERS})")
+    logger.info(
+        f"[AdaptivePool] Start mit {n_workers} Workern (max. {MAX_WORKERS}), "
+        f"Timeout {current_timeout[0]:.0f}s (max. {MAX_TIMEOUT}s)"
+    )
 
     failed_oaiids: list[dict[str, str] | None] = []
-    # MAX_WORKERS Threads im Pool – die effektive Parallelität regelt das Semaphore
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = {executor.submit(throttled_download, u): u for u in urls}
         with tqdm(total=len(urls), desc="Harveste...", unit="files", dynamic_ncols=True) as pbar:
@@ -373,16 +422,23 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
                 failed_oaiids.append(future.result())
                 pbar.update(1)
                 with lock:
-                    pbar.set_postfix(workers=n_workers)
+                    pbar.set_postfix(workers=n_workers, timeout=f"{current_timeout[0]:.0f}s")
 
     stop_event.set()
     controller_thread.join(timeout=MEASURE_INTERVAL + 1)
 
-    w_min  = min(worker_snapshots)
-    w_max  = max(worker_snapshots)
-    w_avg  = sum(worker_snapshots) / len(worker_snapshots)
-    stats_msg = f"[AdaptivePool] Worker-Statistik: min. {w_min}, max. {w_max}, Ø {w_avg:.1f} Threads"
-    print_and_log(stats_msg, logger, "info")
+    # ---- Abschluss-Statistik ----
+    w_min = min(worker_snapshots)
+    w_max = max(worker_snapshots)
+    w_avg = sum(worker_snapshots) / len(worker_snapshots)
+    t_min = min(timeout_snapshots)
+    t_max = max(timeout_snapshots)
+    t_avg = sum(timeout_snapshots) / len(timeout_snapshots)
+    print_and_log(
+        f"[AdaptivePool] Worker-Statistik:  min. {w_min}, max. {w_max}, Ø {w_avg:.1f} Threads\n"
+        f"[AdaptiveTimeout] Timeout-Statistik: min. {t_min:.0f}s, max. {t_max:.0f}s, Ø {t_avg:.1f}s",
+        logger, "info",
+    )
 
     failed_files = defaultdict(list)
     for subdict in failed_oaiids:
