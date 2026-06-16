@@ -39,6 +39,13 @@ def parseargs() -> dict[str, Any]:
             help="Timeout between requests in seconds (default: 0)",
             default=0,
         )
+        s.add_argument(
+            "--maxtimeout",
+            type=int,
+            help="Hard ceiling for adaptive timeout in seconds (default: 120)",
+            default=None,
+            dest="max_timeout",
+        )
         s.add_argument("--outputfolder", "-o", help="Output folder", default=os.getcwd())
         s.add_argument(
             "--debug",
@@ -49,12 +56,13 @@ def parseargs() -> dict[str, Any]:
         s.add_argument("--exporttype", "-e", help="Export format (xml/json)", default="xml")
 
     def convert_common_args(args):
-        PRM["timeout"], PRM["n_procs"], PRM["out_f"], PRM["debug"], PRM["exp_type"] = (
+        PRM["timeout"], PRM["n_procs"], PRM["out_f"], PRM["debug"], PRM["exp_type"], PRM["max_timeout"] = (
             args.timeout,
             args.parallel,
             args.outputfolder,
             args.debug,
             args.exporttype,
+            args.max_timeout,
         )
 
     subparsers = {

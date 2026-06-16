@@ -6,6 +6,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.2.0] - 2026-06-16
+
+### Added
+
+- Adaptive throttle mechanism that monitors response time and adjusts timeout accordingly every 5s: If median response time is >10% above current timeout --> +5s, otherwise -5s. Maximum set at 120s.
+
+---
+
 ## [2.1.0] – 2026-06-10
 
 ### Added
