@@ -46,6 +46,13 @@ def parseargs() -> dict[str, Any]:
             default=None,
             dest="max_timeout",
         )
+        s.add_argument(
+            "--batchsize",
+            type=int,
+            help="Number of files per subfolder (default: 10000)",
+            default=None,
+            dest="batch_size",
+        )
         s.add_argument("--outputfolder", "-o", help="Output folder", default=os.getcwd())
         s.add_argument(
             "--debug",
@@ -56,13 +63,14 @@ def parseargs() -> dict[str, Any]:
         s.add_argument("--exporttype", "-e", help="Export format (xml/json)", default="xml")
 
     def convert_common_args(args):
-        PRM["timeout"], PRM["n_procs"], PRM["out_f"], PRM["debug"], PRM["exp_type"], PRM["max_timeout"] = (
+        PRM["timeout"], PRM["n_procs"], PRM["out_f"], PRM["debug"], PRM["exp_type"], PRM["max_timeout"], PRM["batch_size"] = (
             args.timeout,
             args.parallel,
             args.outputfolder,
             args.debug,
             args.exporttype,
             args.max_timeout,
+            args.batch_size,
         )
 
     subparsers = {
@@ -227,6 +235,12 @@ def parseargs() -> dict[str, Any]:
         PRM["out_f"] = read_yaml_file(PRM["conf_f"], ["outputfolder"], os.getcwd())[0] or os.getcwd()
         # n_procs: read from config file, None means auto-scale based on ID count
         PRM["n_procs"] = read_yaml_file(PRM["conf_f"], ["numberofprocesses"])[0]
+        # batch_size: read from config file, None means default (10000)
+        PRM["batch_size"] = read_yaml_file(PRM["conf_f"], ["batchsize"])[0]
+        # max_timeout: read from config file, None means default (120s)
+        PRM["max_timeout"] = read_yaml_file(PRM["conf_f"], ["maxtimeout"])[0]
+        # resumptiontoken: gesetzt wenn Checkpoint-YAML verwendet wird
+        PRM["res_tok"] = read_yaml_file(PRM["conf_f"], ["resumptiontoken"])[0]
         # Clean up base URL and prefix if they are not None
         if PRM["b_url"] is not None:
             PRM["b_url"] = re.sub(r"/\s$", "", PRM["b_url"])

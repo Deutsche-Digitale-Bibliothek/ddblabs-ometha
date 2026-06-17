@@ -11,7 +11,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 
 - Adaptive throttle mechanism that monitors response time and adjusts timeout accordingly every 5s: If median response time is >10% above current timeout --> +5s, otherwise -5s. Maximum set at 120s.
+- `conf` mode: added `batchsize`, `numberofprocesses` and `maxtimeout` parameters
 
+## Changed
+
+- Number of harvested files per subfolder can be controlled via `batchsize`. Added to `PRM` and included in `GUI` and `TUI mode`.
+- Improved recovery workflow in harvester: both checkpoint writers (crash upon error and checkpoint every 1,000 IDs) now create YAML files instead of txt. The new recovery workflow is therefore: Checkpoint YAML written to output folder → `uv run ometha conf -c resumption_token_latest.yaml` continues with all given parameters including Resumption Token.
 ---
 
 ## [2.1.0] – 2026-06-10
