@@ -81,14 +81,30 @@ def get_identifier(
                 if retry_count >= max_retries:
                     # Save the last resumption token before exiting
                     if last_token:
-                        token_file = os.path.join(PRM.get("out_f", "."), f"resumption_token_{TIMESTR}.txt")
+                        token_file = os.path.join(PRM.get("out_f", "."), f"resumption_token_{TIMESTR}.yaml")
                         try:
-                            with open(token_file, "w") as f:
-                                f.write(f"Resume with: --resumptiontoken {last_token}\n")
-                                f.write(f"Last successful count: {len(id_list)} IDs\n")
-                                f.write(f"Token: {last_token}\n")
-                            print(f"\n{INFO}Resumption token saved to: {token_file}")
-                            logger.info(f"Saved resumption token to {token_file}")
+                            with open(token_file, "w", encoding="utf-8") as f:
+                                f.write(
+                                    f"Information: Abbruch-Checkpoint erzeugt mit Ometha {__version__}\n"
+                                    f"date: {TIMESTR}\n"
+                                    f"baseurl: {PRM['b_url']}\n"
+                                    f"metadataPrefix: {PRM['pref']}\n"
+                                    f"datengeber: {PRM.get('dat_geb')}\n"
+                                    f"sets: {PRM.get('sets')}\n"
+                                    f"fromdate: {PRM.get('f_date')}\n"
+                                    f"untildate: {PRM.get('u_date')}\n"
+                                    f"outputfolder: {PRM.get('out_f')}\n"
+                                    f"numberofprocesses: {PRM.get('n_procs')}\n"
+                                    f"maxtimeout: {PRM.get('max_timeout')}\n"
+                                    f"batchsize: {PRM.get('batch_size')}\n"
+                                    f"timeout: {PRM.get('timeout')}\n"
+                                    f"debug: {PRM.get('debug')}\n"
+                                    f"resumptiontoken: {last_token}\n"
+                                    f"# IDs bisher gesammelt: {len(id_list)}\n"
+                                    f"# Fortsetzen mit: ometha conf -c {token_file}\n"
+                                )
+                            print(f"\n{INFO}Checkpoint gespeichert: {token_file}")
+                            logger.info(f"Saved resumption token checkpoint to {token_file}")
                         except Exception as save_err:
                             logger.error(f"Could not save resumption token: {save_err}")
                     spinner.stop()
@@ -129,13 +145,29 @@ def get_identifier(
 
         # Periodically save resumption token for recovery
         if token and len(id_list) % token_save_interval == 0:
-            token_file = os.path.join(PRM.get("out_f", "."), "resumption_token_latest.txt")
+            token_file = os.path.join(PRM.get("out_f", "."), "resumption_token_latest.yaml")
             try:
-                with open(token_file, "w") as f:
-                    f.write(f"Resume with: --resumptiontoken {token}\n")
-                    f.write(f"Current count: {len(id_list)} IDs\n")
-                    f.write(f"Token: {token}\n")
-                logger.info(f"Saved checkpoint at {len(id_list)} IDs")
+                with open(token_file, "w", encoding="utf-8") as f:
+                    f.write(
+                        f"Information: Laufender Checkpoint erzeugt mit Ometha {__version__}\n"
+                        f"date: {TIMESTR}\n"
+                        f"baseurl: {PRM['b_url']}\n"
+                        f"metadataPrefix: {PRM['pref']}\n"
+                        f"datengeber: {PRM.get('dat_geb')}\n"
+                        f"sets: {PRM.get('sets')}\n"
+                        f"fromdate: {PRM.get('f_date')}\n"
+                        f"untildate: {PRM.get('u_date')}\n"
+                        f"outputfolder: {PRM.get('out_f')}\n"
+                        f"numberofprocesses: {PRM.get('n_procs')}\n"
+                        f"maxtimeout: {PRM.get('max_timeout')}\n"
+                        f"batchsize: {PRM.get('batch_size')}\n"
+                        f"timeout: {PRM.get('timeout')}\n"
+                        f"debug: {PRM.get('debug')}\n"
+                        f"resumptiontoken: {token}\n"
+                        f"# IDs bisher gesammelt: {len(id_list)}\n"
+                        f"# Fortsetzen mit: ometha conf -c {token_file}\n"
+                    )
+                logger.info(f"Saved checkpoint at {len(id_list)} IDs to {token_file}")
             except Exception as save_err:
                 logger.warning(f"Could not save resumption token checkpoint: {save_err}")
 
@@ -161,20 +193,14 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
     :return: tuple with failed_download, failed_ids ID-Lists
     """
 
-    def get_subfolder(base_folder: str, index: int, batch_size: int = 10_000) -> str:
+    def get_subfolder(base_folder: str, index: int) -> str:
         """Gibt den Unterordner für eine Datei anhand ihres Index zurück.
 
         Teilt die Downloads in Unterordner à batch_size Dateien auf,
-        z.B. part_0001, part_0002 usw.
-
-        Args:
-            base_folder: Basisordner für alle Downloads.
-            index: Laufender Index der aktuellen Datei (0-basiert).
-            batch_size: Maximale Anzahl von Dateien pro Unterordner.
-
-        Returns:
-            Pfad des Unterordners (wird bei Bedarf angelegt).
+        z.B. part_0001, part_0002 usw. batch_size wird aus PRM["batch_size"]
+        gelesen, default 10.000.
         """
+        batch_size = int(PRM["batch_size"]) if PRM.get("batch_size") else 10_000
         batch_num = index // batch_size + 1
         subfolder = os.path.join(base_folder, f"part_{batch_num:04d}")
         os.makedirs(subfolder, exist_ok=True)
@@ -489,7 +515,7 @@ def create_id_file(PRM: dict[str, Any], ids: list[str], folder: str, type: str |
     file = os.path.join(folder, f"_ometha_{type}_ids.yaml")
     with open(file, "w", encoding="utf-8") as f:
         f.write(
-            f"Information: Liste erzeugt mit Ometha {__version__}\ndate: {TIMESTR}\nbaseurl: {PRM['b_url']}\nsets: {PRM['sets']}\nmetadataPrefix: {PRM['pref']}\ndatengeber: {PRM['dat_geb']}\ntimeout: {PRM['timeout']}\ndebug: {PRM['debug']}\nfromdate: {PRM['f_date']}\nuntildate: {PRM['u_date']}\noutputfolder: {PRM['out_f']}\nids:\n"
+            f"Information: Liste erzeugt mit Ometha {__version__}\ndate: {TIMESTR}\nbaseurl: {PRM['b_url']}\nsets: {PRM['sets']}\nmetadataPrefix: {PRM['pref']}\ndatengeber: {PRM['dat_geb']}\ntimeout: {PRM['timeout']}\ndebug: {PRM['debug']}\nfromdate: {PRM['f_date']}\nuntildate: {PRM['u_date']}\noutputfolder: {PRM['out_f']}\nnumberofprocesses: {PRM['n_procs']}\nmaxtimeout: {PRM['max_timeout']}\nbatchsize: {PRM['batch_size']}\nids:\n"
         )
         f.write("\n".join([f"- '{fid}'" for fid in ids]))
     return file

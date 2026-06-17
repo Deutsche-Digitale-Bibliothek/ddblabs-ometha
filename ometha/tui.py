@@ -77,6 +77,8 @@ def interactiveMode(session: Session) -> dict[str, Any]:
         PRM["out_f"] = get_folder_input("Ordner in den geharvestet werden soll: ", os.getcwd())
         n_procs_input = input("Anzahl an parallelen Downloads (default: auto): ").strip()
         PRM["n_procs"] = int(n_procs_input) if n_procs_input else None
+        batch_size_input = input("Dateien pro Unterordner (default: 10000): ").strip()
+        PRM["batch_size"] = int(batch_size_input) if batch_size_input else None
         PRM["exp_type"] = (
             get_valid_input(
                 "Exportformat (xml/json) (default: xml): ",

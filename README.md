@@ -110,6 +110,7 @@ Nach dem Verlassen des Base-URL-Felds (oder per Klick auf den Globus-Button nebe
 |---------------------------|-------------------------------------------------------------------------|
 | **Datengeber**            | Name des Ausgabeordners (Standard: Zeitstempel)                         |
 | **Ausgabeordner**         | Zielverzeichnis; über den Ordner-Button kann ein Dialog geöffnet werden |
+| **Dateien pro Ordner**    | Anzahl der Dateien pro Unterordner (Standard: 10.000)                   |
 | **Set(s)**                | Ein oder mehrere Sets (Mehrfachauswahl möglich)                         |
 | **Von-Datum / Bis-Datum** | ISO8601-Zeitraum (YYYY-MM-DD); über das Kalender-Icon auswählbar        |
 | **Parallele Downloads**   | Anzahl gleichzeitiger `GetRecord`-Anfragen (Standard: 4)                |
@@ -150,6 +151,7 @@ Optionale Parameter:
 - `-u/--untildate`: Harvesting von OAI-Records bis zu diesem Zeitpunkt. Gleiche Formate wie `-f`
 - `--resumptiontoken`: ResumptionToken, falls das Identifier-Harvesting abgebrochen war ([keine Kurzform!](#errorhandling-abbruch-beim-harvesten-der-oai-identifier))
 - `-p/--parallel`: Parallele Downloads via `GetRecord` (Standard: automatisch basierend auf ID-Anzahl, max. 100)
+- `--batchsize`: Anzahl der Dateien pro Unterordner
 - `-e/--exporttype`: Exportformat `xml` (Standard) oder `json`
 - `--debug`: Debugging aktivieren (verboser Output)
 
@@ -184,6 +186,8 @@ untildate: null
 timeout: 0
 outputfolder: null
 debug: false
+batchsize: 8000
+maxtimeout: 120
 # Anzahl paralleler Downloads (optional, default: automatisch basierend auf ID-Anzahl):
 # numberofprocesses: 8
 ```
