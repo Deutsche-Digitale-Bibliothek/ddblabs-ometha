@@ -87,7 +87,7 @@ def interactiveMode(session: Session) -> dict[str, Any]:
             )
             or "xml"
         )
-        PRM["timeout"] = float(input("Timeout in Sekunden (default: 0): ") or 0)
+        PRM["timeout"] = float(input("Timeout in Sekunden (default: 20): ") or 0)
 
     if how_to_start == "E":
         sys.exit("Programm beendet.")
