@@ -8,15 +8,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [2.2.0] - 2026-06-16
 
+
 ### Added
-
-- Adaptive throttle mechanism that monitors response time and adjusts timeout accordingly every 5s: If median response time is >10% above current timeout --> +5s, otherwise -5s. Maximum set at 120s.
-- `conf` mode: added `batchsize`, `numberofprocesses` and `maxtimeout` parameters
-
-## Changed
-
-- Number of harvested files per subfolder can be controlled via `batchsize`. Added to `PRM` and included in `GUI` and `TUI mode`.
-- Improved recovery workflow in harvester: both checkpoint writers (crash upon error and checkpoint every 1,000 IDs) now create YAML files instead of txt. The new recovery workflow is therefore: Checkpoint YAML written to output folder → `uv run ometha conf -c resumption_token_latest.yaml` continues with all given parameters including Resumption Token.
+- Output files are now split into numbered subfolders (`part_0001`, `part_0002`, ...) to avoid excessively large directories. Subfolder size defaults to 10,000 files and is configurable via `--batchsize` (CLI), the interactive prompt, the GUI, or `batchsize` in a config YAML.
+- Parallel download count now adapts automatically at runtime based on measured throughput (files/sec), increasing workers when an endpoint responds well and decreasing them when throughput drops. The value passed via `--parallel`/`-p` (or the config file/GUI equivalent) now acts as a hard ceiling for the adaptive pool instead of a fixed value.
+- Request timeout now adapts automatically at runtime based on measured response latency, increasing in steps when an endpoint is slow and decreasing again when it speeds up. The configured timeout value acts as the floor; a new `--maxtimeout` option (default 120s) sets the ceiling.
+- End-of-run summary now logs min/max/average worker count and min/max/average timeout used during the harvest.
+- Failed downloads and failed IDs (timeouts, connection errors, HTTP errors) are now merged and retried exactly once at the end of a run, with reduced parallelism, to recover records from endpoints that generate content on demand. A final list of any still-failing IDs is written to `_ometha_final_failed_ids.yaml`.
+- Resumption-token checkpoints (both the periodic checkpoint and the one written on a fatal error) are now written as complete, ready-to-use config YAMLs — including base URL, metadata prefix, sets, date range, output folder, and the new adaptive-pool/timeout/batch-size settings — instead of plain-text notes. They can be resumed directly with `ometha conf -c <file>`.
+- ID-list YAML files (successful, failed, final-failed) now also record `numberofprocesses`, `maxtimeout`, and `batchsize` for full reproducibility.
+- Default request timeout changed from 0 (no timeout) to 20 seconds.
+### Fixed
+- Fixed a crash (`AttributeError: Can't get local object 'start_process.<locals>.assert_status_hook'`) during long-running auto-mode harvests, caused by a response hook defined as a local function, which cannot be pickled when the session is passed across threads. The hook is now defined at module level.
+- Removed the response status hook from the session entirely, since it fired before the `HTTPAdapter` retry logic could run, effectively disabling automatic retries on 429/5xx responses. Status codes are now checked explicitly after each request, after retries have been exhausted.
+- Improved the "HTTP error" message during identifier harvesting to include the actual status code and URL instead of a generic message.
+- Fixed resumption-token harvesting returning 0 IDs on several endpoints, caused by a double `&&` in the generated URL (`...ListIdentifiers&&resumptionToken=...`). Some OAI-PMH endpoints do not tolerate the malformed query string.
+- Fixed resumption tokens with surrounding/internal whitespace not being recognized as "no more pages", which could prematurely stop or otherwise misbehave during identifier harvesting.
+- `from` and `until` dates are now normalized to the same granularity before being sent to an endpoint (OAI-PMH requires matching granularity). A date-only value is padded to a full datetime (`00:00:00Z` / `23:59:59Z`) if the other bound includes a time component, and vice versa. Previously, mixed granularity (e.g. `from=2020-02-13&until=2026-06-09T14:51:05Z`) caused some endpoints to reject the request.
+- Fixed a `NameError: name 'export_type' is not defined` crash during file harvesting introduced while refactoring the download worker.
+- Fixed a potential division-by-zero when calculating the retry worker count if there were failed downloads but no failed IDs (or vice versa).
+### Changed
+- Refactored the file-download worker pool from a fixed-size `multiprocessing.dummy.ThreadPool` to a `ThreadPoolExecutor` with a semaphore-controlled adaptive concurrency limit, enabling live resizing without restarting the pool.
 ---
 
 ## [2.1.0] – 2026-06-10

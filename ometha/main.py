@@ -306,21 +306,37 @@ def start_process() -> None:
         sys.exit()
     # ---- Start Harvesting ----
     failed_download, failed_ids = harvest_files(ids, PRM, folder, session)
-    # ---- Retry failed downloads ----
-    if failed_ids or failed_download:
-        # failed_ids: Beim Harvesting übersprungene Dateien (wegen Timeout/Connection-problem). Hier nochmal versuchen!
-        print(f"Fehlgeschlagene IDs: {failed_ids}") if PRM["debug"] else None
-        failed_idfile = create_id_file(PRM, failed_ids, folder, type="failed")
+
+    # ---- Einmaliger Retry für alle fehlgeschlagenen IDs ----
+    # failed_ids:       Timeout/Connection-Fehler → einmal wiederholen
+    # failed_download:  HTTP-Fehler oder ungültige Antwort → auch wiederholen,
+    #                   da manche Schnittstellen Datensätze erst ad hoc erzeugen
+    retry_ids = list(set(failed_ids + failed_download))
+    if retry_ids:
+        print(f"Fehlgeschlagene IDs: {retry_ids}") if PRM["debug"] else None
+        failed_idfile = create_id_file(PRM, retry_ids, folder, type="failed")
         print_and_log(
-            f"{SEP_LINE}{ACHTUNG} Es wurden IDs aufgrund von Verbindungsproblemen übersprungen.\n  Siehe dazu {failed_idfile}{SEP_LINE}{INFO} fehlgeschlagene IDs erneut harvesten..",
+            f"{SEP_LINE}{ACHTUNG} {len(retry_ids)} IDs konnten nicht geharvestet werden.\n"
+            f"  Siehe dazu {failed_idfile}\n"
+            f"{SEP_LINE}{INFO} Fehlgeschlagene IDs werden einmalig erneut versucht...",
             logger,
             "warning",
         )
-        PRM["n_procs"] = min(int(1 / (len(failed_ids) / len(ids)) + 1), 6)
-        failed_download, failed_ids = harvest_files(failed_ids, PRM, folder, session)
+        # Weniger parallele Worker für den Retry – schont langsame Schnittstellen
+        retry_n_procs = min(max(1, PRM["n_procs"] // 2), 6) if PRM["n_procs"] else 4
+        PRM_retry = {**PRM, "n_procs": retry_n_procs}
+        failed_download, failed_ids = harvest_files(retry_ids, PRM_retry, folder, session)
         if failed_ids or failed_download:
             print_and_log(
-                f"{SEP_LINE}{INFO} Harvesting von {len(failed_download) + len(failed_ids)} Datensätzen fehlgeschlagen\nProgramm beendet",
+                f"{SEP_LINE}{INFO} Nach erneutem Versuch: "
+                f"{len(failed_download) + len(failed_ids)} Datensätze endgültig fehlgeschlagen.",
+                logger,
+                "warning",
+            )
+            create_id_file(PRM, failed_ids + failed_download, folder, type="final_failed")
+        else:
+            print_and_log(
+                f"{SEP_LINE}{INFO} Alle IDs beim zweiten Versuch erfolgreich geharvestet.",
                 logger,
                 "info",
             )

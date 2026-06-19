@@ -36,8 +36,8 @@ def parseargs() -> dict[str, Any]:
             "--timeout",
             "-t",
             type=int,
-            help="Timeout between requests in seconds (default: 0)",
-            default=0,
+            help="Timeout between requests in seconds (default: 20)",
+            default=20,
         )
         s.add_argument(
             "--maxtimeout",

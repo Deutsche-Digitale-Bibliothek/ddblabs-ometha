@@ -29,7 +29,7 @@ PRM = {
     "dat_geb": None,  # datengeber: int
     "sets": {},  # dict with two subdicts, either additive or subtractive with a list
     "debug": None,  # debug: bool
-    "timeout": None,  # timeout: float
+    "timeout": 20,  # timeout: float
     "id_f": None,  # id file: path
     "f_date": None,  # from date: int
     "u_date": None,  # until date: int
