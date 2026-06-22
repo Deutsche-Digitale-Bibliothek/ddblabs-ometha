@@ -185,8 +185,8 @@ def start_process() -> None:
     # output PRM dictionary if debug mode is enabled via environment variable
     if os.getenv("OMETHA_DEBUG") == "True":
         print(PRM)
-    folder = os.path.join(PRM["out_f"], PRM["dat_geb"], TIMESTR)
-    folder = folder.replace(":", "_")
+    safe_timestr = TIMESTR.replace(":", "_")
+    folder = os.path.join(PRM["out_f"], PRM["dat_geb"], safe_timestr)
     os.makedirs(folder, exist_ok=True)
 
     # bei Configmode & Automode das until-Datum setzen bevor es geloggt wird

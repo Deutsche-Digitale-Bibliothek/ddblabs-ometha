@@ -27,6 +27,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `from` and `until` dates are now normalized to the same granularity before being sent to an endpoint (OAI-PMH requires matching granularity). A date-only value is padded to a full datetime (`00:00:00Z` / `23:59:59Z`) if the other bound includes a time component, and vice versa. Previously, mixed granularity (e.g. `from=2020-02-13&until=2026-06-09T14:51:05Z`) caused some endpoints to reject the request.
 - Fixed a `NameError: name 'export_type' is not defined` crash during file harvesting introduced while refactoring the download worker.
 - Fixed a potential division-by-zero when calculating the retry worker count if there were failed downloads but no failed IDs (or vice versa).
+- Fixed output folders being created with a mangled path (e.g. `C_\Users\...` instead of `C:\Users\...`) on Windows, caused by a colon-stripping step that was applied to the entire output path instead of just the timestamp component.
 ### Changed
 - Refactored the file-download worker pool from a fixed-size `multiprocessing.dummy.ThreadPool` to a `ThreadPoolExecutor` with a semaphore-controlled adaptive concurrency limit, enabling live resizing without restarting the pool.
 ---
