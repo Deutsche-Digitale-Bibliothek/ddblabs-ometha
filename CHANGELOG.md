@@ -6,7 +6,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [2.2.0] - 2026-06-16
+## [2.2.0] - 2026-06-26
 
 
 ### Added
@@ -28,24 +28,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Fixed a `NameError: name 'export_type' is not defined` crash during file harvesting introduced while refactoring the download worker.
 - Fixed a potential division-by-zero when calculating the retry worker count if there were failed downloads but no failed IDs (or vice versa).
 - Fixed output folders being created with a mangled path (e.g. `C_\Users\...` instead of `C:\Users\...`) on Windows, caused by a colon-stripping step that was applied to the entire output path instead of just the timestamp component.
+- Fixed auto mode writing `until-Datum` instead of `untildate` to the config YAML
 ### Changed
 - Refactored the file-download worker pool from a fixed-size `multiprocessing.dummy.ThreadPool` to a `ThreadPoolExecutor` with a semaphore-controlled adaptive concurrency limit, enabling live resizing without restarting the pool.
 ---
 
-## [2.1.0] – 2026-06-10
-
-### Added
-- Adaptive throttle mechanism measures the amount of harvested files per minute and adjusts the number of parallel downloads every 5 seconds.
-
-### Fixed
-- `conf` mode: remove `assert_status_hook` from `start_process` and move it a layer above in order to prevent incorrect pickling and referring to a then pickled internal function. 
-- `conf` mode: conflicting configuaration of assert_status_hook and the retry mechanism. The retry mechanism should trigger a retry in case of a 503 for example, but assert_status_hook was throwing an error before it had a chance to do so. Therefore, the hook was removed from the session and and a status check added right after the request.
-- `conf` mode with `--a`: a function was added to catch inconsistent date formats in YAML files. Both from date and until date either need to be date and time or just date, a mix of both is a violation of the OAI-PMH protocol. The function adds `T00:00:00Z` to the from date or `T23:59:59Z` to the until date in order to make sure both have the same level of granularity and Ometha harvests last days completely.
-
-### Changed
-- Harvested files are grouped into subfolders of 10,000 files each in order to preserve OS performance.
-
----
 
 ## [2.1.0] – 2026-03-28
 
