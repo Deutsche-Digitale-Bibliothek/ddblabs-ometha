@@ -191,7 +191,7 @@ def start_process() -> None:
 
     # bei Configmode & Automode das until-Datum setzen bevor es geloggt wird
     if PRM["conf_m"] and PRM["auto_m"]:
-        change_date(OAITIMESTR, PRM["conf_f"], key="until-Datum")
+        change_date(OAITIMESTR, PRM["conf_f"], key="untildate")
         PRM["u_date"] = OAITIMESTR
 
     # Logfile anlegen
@@ -302,7 +302,7 @@ def start_process() -> None:
 
             shutil.rmtree(folder, ignore_errors=True)
         print_and_log(f"{SEP_LINE}Keine IDs gefunden. Programm beendet.", logger, "warning")
-        change_date(OAITIMESTR, PRM["conf_f"], key="from-Datum")
+        change_date(OAITIMESTR, PRM["conf_f"], key="fromdate")
         sys.exit()
     # ---- Start Harvesting ----
     failed_download, failed_ids = harvest_files(ids, PRM, folder, session)
@@ -345,7 +345,7 @@ def start_process() -> None:
         runtime = "{:02}:{:02}:{:.3f}".format(*divmod(timeit.default_timer() - start_time, 3600, 60))
         print_and_log(f"{SEP_LINE}{INFO} Vorgang hat {runtime} gedauert", logger, "info")
 
-    change_date(OAITIMESTR, PRM["conf_f"], key="from-Datum")
+    change_date(OAITIMESTR, PRM["conf_f"], key="fromdate")
 
     if os.name == "nt":
         # Beenden unter Windows

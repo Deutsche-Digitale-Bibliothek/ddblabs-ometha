@@ -7,7 +7,6 @@ import threading
 from collections import defaultdict, deque
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from functools import partial
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -38,7 +37,81 @@ from .helpers import (
 )
 
 
-# restliche Funktionen
+def _build_yaml_doc(PRM: dict, extra: dict | None = None) -> dict:
+    """Build a sanitized dict suitable for yaml.safe_dump().
+
+    Normalizes sets to a flat list, ensures debug defaults to False,
+    and keeps all other values as-is (yaml.safe_dump handles None → null).
+
+    Args:
+        PRM: Parameters dictionary.
+        extra: Additional key/value pairs merged into the document
+               (e.g. ``{"resumptiontoken": token}`` for checkpoints).
+
+    Returns:
+        A dict ready for ``yaml.safe_dump()``.
+    """
+    # Normalize sets to a flat list
+    sets_val = PRM.get("sets")
+    if isinstance(sets_val, list) and sets_val and isinstance(sets_val[0], dict):
+        additive = sets_val[0].get("additive") or []
+        intersection = sets_val[0].get("intersection") or []
+        sets_out = additive + intersection
+    elif isinstance(sets_val, list):
+        sets_out = sets_val or []
+    else:
+        sets_out = []
+
+    doc = {
+        "baseurl":           PRM.get("b_url"),
+        "metadataPrefix":    PRM.get("pref"),
+        "datengeber":        PRM.get("dat_geb"),
+        "sets":              sets_out,
+        "fromdate":          PRM.get("f_date"),
+        "untildate":         PRM.get("u_date"),
+        "outputfolder":      PRM.get("out_f"),
+        "numberofprocesses": PRM.get("n_procs"),
+        "maxtimeout":        PRM.get("max_timeout"),
+        "batchsize":         PRM.get("batch_size"),
+        "timeout":           PRM.get("timeout"),
+        "debug":             PRM.get("debug") or False,
+    }
+    if extra:
+        doc.update(extra)
+    return doc
+
+
+def write_checkpoint_yaml(token: str, id_count: int, PRM: dict, label: str = "Laufender Checkpoint") -> str:
+    """Schreibt einen Checkpoint mit Resumption Token als valide YAML-Datei.
+
+    Verwendet yaml.safe_dump() statt f-Strings, damit None → null und komplexe
+    Strukturen (sets, Listen) korrekt serialisiert werden.
+
+    Args:
+        token: Aktueller Resumption Token.
+        id_count: Anzahl bisher gesammelter IDs.
+        PRM: Parameter-Dictionary.
+        label: Beschriftung im Information-Feld.
+
+    Returns:
+        Pfad der geschriebenen Datei.
+    """
+    is_abort = "Abbruch" in label
+    filename = f"resumption_token_{TIMESTR}.yaml" if is_abort else "resumption_token_latest.yaml"
+    token_file = os.path.join(PRM.get("out_f", "."), filename)
+
+    doc = {
+        "Information": f"{label} erzeugt mit Ometha {__version__}",
+        "date": TIMESTR,
+        **_build_yaml_doc(PRM, extra={"resumptiontoken": token}),
+    }
+    with open(token_file, "w", encoding="utf-8") as f:
+        yaml.safe_dump(doc, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        f.write(f"# IDs bisher gesammelt: {id_count}\n")
+        f.write(f"# Fortsetzen mit: ometha conf -c {token_file}\n")
+    return token_file
+
+
 def get_identifier(
     PRM: dict[str, Any],
     url: str,
@@ -63,7 +136,7 @@ def get_identifier(
     spinner.start()
 
     id_list = []
-    token_save_interval = 1000  # Save resumption token every 1000 IDs
+    token_save_interval = 1000
     last_token = None
 
     while True:
@@ -75,34 +148,13 @@ def get_identifier(
                 response = session.get(url, verify=False, timeout=(30, 120))
                 response.raise_for_status()
                 root = isinvalid_xml_content(response, url, PRM["mode"])
-                break  # Success, exit retry loop
+                break
             except Exception as e:
                 retry_count += 1
                 if retry_count >= max_retries:
-                    # Save the last resumption token before exiting
                     if last_token:
-                        token_file = os.path.join(PRM.get("out_f", "."), f"resumption_token_{TIMESTR}.yaml")
                         try:
-                            with open(token_file, "w", encoding="utf-8") as f:
-                                f.write(
-                                    f"Information: Abbruch-Checkpoint erzeugt mit Ometha {__version__}\n"
-                                    f"date: {TIMESTR}\n"
-                                    f"baseurl: {PRM['b_url']}\n"
-                                    f"metadataPrefix: {PRM['pref']}\n"
-                                    f"datengeber: {PRM.get('dat_geb')}\n"
-                                    f"sets: {PRM.get('sets')}\n"
-                                    f"fromdate: {PRM.get('f_date')}\n"
-                                    f"untildate: {PRM.get('u_date')}\n"
-                                    f"outputfolder: {PRM.get('out_f')}\n"
-                                    f"numberofprocesses: {PRM.get('n_procs')}\n"
-                                    f"maxtimeout: {PRM.get('max_timeout')}\n"
-                                    f"batchsize: {PRM.get('batch_size')}\n"
-                                    f"timeout: {PRM.get('timeout')}\n"
-                                    f"debug: {PRM.get('debug')}\n"
-                                    f"resumptiontoken: {last_token}\n"
-                                    f"# IDs bisher gesammelt: {len(id_list)}\n"
-                                    f"# Fortsetzen mit: ometha conf -c {token_file}\n"
-                                )
+                            token_file = write_checkpoint_yaml(last_token, len(id_list), PRM, label="Abbruch-Checkpoint")
                             print(f"\n{INFO}Checkpoint gespeichert: {token_file}")
                             logger.info(f"Saved resumption token checkpoint to {token_file}")
                         except Exception as save_err:
@@ -110,7 +162,7 @@ def get_identifier(
                     spinner.stop()
                     handle_error(e, PRM["mode"], url)
                 else:
-                    wait_time = 10 * (2**retry_count)  # Exponential backoff: 20s, 40s, 80s
+                    wait_time = 10 * (2**retry_count)
                     print(f"\n{ACHTUNG}Retry {retry_count}/{max_retries} after {wait_time}s due to error...")
                     logger.warning(f"Retrying after {wait_time}s (attempt {retry_count}/{max_retries})")
                     time.sleep(wait_time)
@@ -125,7 +177,6 @@ def get_identifier(
                 "info",
                 end="",
             ) if list_size else print("Keine ListSize angegeben")
-            # Callback Funktion für die GUI, damit sie die ListSize anzeigen kann, wenn sie vorhanden ist
             if list_size and on_list_size:
                 on_list_size(int(list_size.group(1)))
 
@@ -145,33 +196,12 @@ def get_identifier(
 
         # Periodically save resumption token for recovery
         if token and len(id_list) % token_save_interval == 0:
-            token_file = os.path.join(PRM.get("out_f", "."), "resumption_token_latest.yaml")
             try:
-                with open(token_file, "w", encoding="utf-8") as f:
-                    f.write(
-                        f"Information: Laufender Checkpoint erzeugt mit Ometha {__version__}\n"
-                        f"date: {TIMESTR}\n"
-                        f"baseurl: {PRM['b_url']}\n"
-                        f"metadataPrefix: {PRM['pref']}\n"
-                        f"datengeber: {PRM.get('dat_geb')}\n"
-                        f"sets: {PRM.get('sets')}\n"
-                        f"fromdate: {PRM.get('f_date')}\n"
-                        f"untildate: {PRM.get('u_date')}\n"
-                        f"outputfolder: {PRM.get('out_f')}\n"
-                        f"numberofprocesses: {PRM.get('n_procs')}\n"
-                        f"maxtimeout: {PRM.get('max_timeout')}\n"
-                        f"batchsize: {PRM.get('batch_size')}\n"
-                        f"timeout: {PRM.get('timeout')}\n"
-                        f"debug: {PRM.get('debug')}\n"
-                        f"resumptiontoken: {token}\n"
-                        f"# IDs bisher gesammelt: {len(id_list)}\n"
-                        f"# Fortsetzen mit: ometha conf -c {token_file}\n"
-                    )
+                token_file = write_checkpoint_yaml(token, len(id_list), PRM)
                 logger.info(f"Saved checkpoint at {len(id_list)} IDs to {token_file}")
             except Exception as save_err:
                 logger.warning(f"Could not save resumption token checkpoint: {save_err}")
 
-        # URL für nächste Suche zusammenbauen, wenn kein Token (== letzte Seite) loop beenden
         if not token:
             break
         url = f"{PRM['b_url']}?verb=ListIdentifiers&resumptionToken={token}"
@@ -180,6 +210,13 @@ def get_identifier(
     spinner.ok("✓")
     logger.info(f"Letzte abgefragte URL: {url}")
     logger.info("Identifier Harvesting beendet.")
+
+    # Abschließenden Checkpoint schreiben falls noch ein Token vorhanden
+    if last_token and token is None:
+        try:
+            write_checkpoint_yaml(last_token, len(id_list), PRM, label="Abschluss-Checkpoint")
+        except Exception:
+            pass
 
     return id_list
 
@@ -215,7 +252,7 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
         Returns:
             True on success, False if the file could not be saved (e.g. JSON conversion error).
         """
-        filename = re.sub(r"([:.|&%$=()\"#+\'´`*~<>!?/;,\[\]]|\s)", "_", oai_id)
+        filename = re.sub(r"([:.|&%$=()\"#+\'´`*~<>!?/;,$$]|\s)", "_", oai_id)
         if export_type == "xml":
             with open(os.path.join(folder, f"{filename}.xml"), "w", encoding="utf8") as of:
                 of.write(response)
@@ -230,15 +267,9 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
                 logger.warning(f"XML→JSON-Konvertierung fehlgeschlagen für {oai_id}: {e}")
                 return False
         else:
-            # TODO this check should be done before the harvesting starts
             with open(os.path.join(folder, f"{filename}.xml"), "w", encoding="utf8") as of:
                 of.write(response)
             return True
-
-    def get_response_text_from_url(url_with_index: tuple[str, int], session: Session, folder: str, export_type: str) -> dict[str, str] | None:
-        # Nicht mehr direkt aufgerufen – Logik steckt in throttled_download.
-        # Bleibt als Stub erhalten damit externe Referenzen nicht brechen.
-        pass
 
     if ids:
         print_and_log(f"{SEP_LINE}Harveste {len(ids)} IDs.", logger, "info")
@@ -251,58 +282,33 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
     ]
 
     # ------------------------------------------------------------------ #
-    # Adaptiver Worker-Pool                                                #
-    #                                                                      #
-    # Ein Steuer-Thread misst alle MEASURE_INTERVAL Sekunden den          #
-    # Durchsatz (Dateien/s) über ein gleitendes Fenster der letzten       #
-    # WINDOW_SIZE Messungen und passt die Worker-Anzahl an:               #
-    #   - Durchsatz gestiegen  → Worker erhöhen (max. 100)                #
-    #   - Durchsatz gesunken   → Worker reduzieren (min. 1)               #
-    #   - Durchsatz stabil     → keine Änderung                           #
-    #                                                                      #
-    # Da ThreadPoolExecutor keine direkte Größenänderung unterstützt,     #
-    # wird die gewünschte Parallelität über ein threading.Semaphore        #
-    # gesteuert: jeder Worker-Thread muss vor dem Request ein Slot         #
-    # belegen und gibt ihn danach frei.                                    #
-    # ------------------------------------------------------------------ #
-
-    # ------------------------------------------------------------------ #
     # Gemeinsame Steuerparameter                                           #
     # ------------------------------------------------------------------ #
-    MEASURE_INTERVAL = 5      # Sekunden zwischen zwei Messungen
-    WINDOW_SIZE      = 4      # Anzahl der Messungen im gleitenden Fenster
-    THROUGHPUT_TOL   = 0.05   # ±5 % gelten als "stabil" (keine Änderung)
-
-    # Worker-Pool
-    STEP_UP          = 2      # Worker-Erhöhung bei verbessertem Durchsatz
-    STEP_DOWN        = 1      # Worker-Reduzierung bei verschlechtertem Durchsatz
-    MAX_WORKERS      = min(PRM["n_procs"], 100)
-    MIN_WORKERS      = 1
+    MEASURE_INTERVAL = 5
+    WINDOW_SIZE      = 4
+    STEP_UP          = 2
+    STEP_DOWN        = 1
+    THROUGHPUT_TOL   = 0.05
 
     # Adaptiver Timeout
-    # Obergrenze: PRM["max_timeout"] wenn gesetzt, sonst 120 s.
-    # Untergrenze: der vom Nutzer übergebene PRM["timeout"] (default 0 = kein Timeout).
-    TIMEOUT_STEP     = 5      # Sekunden pro Anpassungsschritt
-    LATENCY_TOL      = 0.10   # ±10 % gelten als "stabil"
-    MIN_TIMEOUT      = PRM["timeout"] if PRM["timeout"] else 0
-    MAX_TIMEOUT      = int(PRM["max_timeout"]) if PRM.get("max_timeout") else 120
+    TIMEOUT_STEP   = 5
+    LATENCY_TOL    = 0.10
+    MIN_TIMEOUT    = PRM["timeout"] if PRM["timeout"] else 0
+    MAX_TIMEOUT    = int(PRM["max_timeout"]) if PRM.get("max_timeout") else 120
 
-    # Gemeinsamer Lock und Stop-Signal
+    MAX_WORKERS    = min(PRM["n_procs"], 100)
+    MIN_WORKERS    = 1
+
     lock             = threading.Lock()
     stop_event       = threading.Event()
 
-    # Worker-Zustand
     n_workers        = MAX_WORKERS
     semaphore        = threading.Semaphore(n_workers)
     done_count       = [0]
     throughput_window: deque[float] = deque(maxlen=WINDOW_SIZE)
     worker_snapshots: list[int] = [n_workers]
 
-    # Timeout-Zustand
-    # Startwert: PRM["timeout"] wenn angegeben, sonst 0 (= kein Timeout).
-    # Der Controller erhöht ihn nur wenn nötig; bei 0 als Startwert beginnt
-    # er erst zu wirken sobald die erste Anpassung stattfindet.
-    current_timeout  = [float(MIN_TIMEOUT)]   # mutierbare Referenz aus Closure
+    current_timeout  = [float(MIN_TIMEOUT)]
     latency_window:  deque[float] = deque(maxlen=WINDOW_SIZE * MAX_WORKERS)
     timeout_snapshots: list[float] = [current_timeout[0]]
 
@@ -322,17 +328,15 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
             current = done_count[0]
             delta   = current - last_done
 
-            # ---- Durchsatz messen ----
             throughput = delta / elapsed
             throughput_window.append(throughput)
             last_done = current
             last_time = now
 
-            # ---- Latenz messen (Snapshot der aktuellen deque) ----
             with lock:
                 latency_sample = list(latency_window)
 
-            # ---- Worker anpassen (wie bisher) ----
+            # Worker anpassen
             if len(throughput_window) >= 2:
                 avg_prev = sum(list(throughput_window)[:-1]) / (len(throughput_window) - 1)
                 avg_now  = throughput_window[-1]
@@ -345,60 +349,32 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
                             n_workers += delta_w
                             for _ in range(delta_w):
                                 semaphore.release()
-                            logger.info(
-                                f"[AdaptivePool] Durchsatz ↑ {avg_now:.2f} f/s "
-                                f"(+{change*100:.1f}%) → Worker {old} → {n_workers}"
-                            )
+                            logger.info(f"[AdaptivePool] Durchsatz ↑ {avg_now:.2f} f/s (+{change*100:.1f}%) → Worker {old} → {n_workers}")
                         elif change < -THROUGHPUT_TOL and n_workers > MIN_WORKERS:
                             delta_w = min(STEP_DOWN, n_workers - MIN_WORKERS)
                             n_workers -= delta_w
                             for _ in range(delta_w):
                                 semaphore.acquire(blocking=False)
-                            logger.info(
-                                f"[AdaptivePool] Durchsatz ↓ {avg_now:.2f} f/s "
-                                f"({change*100:.1f}%) → Worker {old} → {n_workers}"
-                            )
+                            logger.info(f"[AdaptivePool] Durchsatz ↓ {avg_now:.2f} f/s ({change*100:.1f}%) → Worker {old} → {n_workers}")
                         else:
-                            logger.debug(
-                                f"[AdaptivePool] Durchsatz stabil {avg_now:.2f} f/s "
-                                f"({change*100:+.1f}%) → Worker bleibt {n_workers}"
-                            )
+                            logger.debug(f"[AdaptivePool] Durchsatz stabil {avg_now:.2f} f/s ({change*100:+.1f}%) → Worker bleibt {n_workers}")
                         worker_snapshots.append(n_workers)
 
-            # ---- Timeout anpassen ----
-            # Nur anpassen wenn MAX_TIMEOUT > 0 (d.h. Feature aktiv) und
-            # genug Latenz-Messwerte vorliegen.
+            # Timeout anpassen
             if MAX_TIMEOUT > 0 and len(latency_sample) >= 2:
-                # gleitender Median als robuste Latenz-Schätzung
-                sorted_lat  = sorted(latency_sample)
-                mid         = len(sorted_lat) // 2
-                median_lat  = (sorted_lat[mid - 1] + sorted_lat[mid]) / 2 if len(sorted_lat) % 2 == 0 else sorted_lat[mid]
-
-                # Vergleich mit dem vorherigen Timeout-Snapshot
-                prev_timeout = timeout_snapshots[-1] if timeout_snapshots else current_timeout[0]
-
-                # Heuristik: wenn der Median der Antwortzeiten mehr als
-                # LATENCY_TOL über dem aktuellen Timeout liegt → erhöhen;
-                # wenn er deutlich darunter liegt → senken (bis MIN_TIMEOUT).
+                sorted_lat = sorted(latency_sample)
+                mid = len(sorted_lat) // 2
+                median_lat = (sorted_lat[mid - 1] + sorted_lat[mid]) / 2 if len(sorted_lat) % 2 == 0 else sorted_lat[mid]
                 with lock:
                     old_t = current_timeout[0]
                     if median_lat > old_t * (1 + LATENCY_TOL) and old_t < MAX_TIMEOUT:
                         current_timeout[0] = min(old_t + TIMEOUT_STEP, MAX_TIMEOUT)
-                        logger.info(
-                            f"[AdaptiveTimeout] Latenz ↑ Median={median_lat:.2f}s "
-                            f"→ Timeout {old_t:.0f}s → {current_timeout[0]:.0f}s"
-                        )
+                        logger.info(f"[AdaptiveTimeout] Latenz ↑ Median={median_lat:.2f}s → Timeout {old_t:.0f}s → {current_timeout[0]:.0f}s")
                     elif median_lat < old_t * (1 - LATENCY_TOL) and old_t > MIN_TIMEOUT:
                         current_timeout[0] = max(old_t - TIMEOUT_STEP, MIN_TIMEOUT)
-                        logger.info(
-                            f"[AdaptiveTimeout] Latenz ↓ Median={median_lat:.2f}s "
-                            f"→ Timeout {old_t:.0f}s → {current_timeout[0]:.0f}s"
-                        )
+                        logger.info(f"[AdaptiveTimeout] Latenz ↓ Median={median_lat:.2f}s → Timeout {old_t:.0f}s → {current_timeout[0]:.0f}s")
                     else:
-                        logger.debug(
-                            f"[AdaptiveTimeout] Latenz stabil Median={median_lat:.2f}s "
-                            f"→ Timeout bleibt {old_t:.0f}s"
-                        )
+                        logger.debug(f"[AdaptiveTimeout] Latenz stabil Median={median_lat:.2f}s → Timeout bleibt {old_t:.0f}s")
                     timeout_snapshots.append(current_timeout[0])
 
     def throttled_download(url_with_index: tuple[str, int]) -> dict[str, str] | None:
@@ -406,7 +382,7 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
         semaphore.acquire()
         try:
             with lock:
-                t = current_timeout[0] or None   # 0 → None = kein Timeout
+                t = current_timeout[0] or None
             t_start = time.monotonic()
             url, index = url_with_index
             target_folder = get_subfolder(folder, index)
@@ -511,12 +487,16 @@ def create_id_file(PRM: dict[str, Any], ids: list[str], folder: str, type: str |
     Returns:
         str: The path of the created file.
     """
-    # TODO add date or some other kind of identifier to the file name?
     file = os.path.join(folder, f"_ometha_{type}_ids.yaml")
+
+    doc = {
+        "Information": f"Liste erzeugt mit Ometha {__version__}",
+        "date": TIMESTR,
+        **_build_yaml_doc(PRM),
+    }
     with open(file, "w", encoding="utf-8") as f:
-        f.write(
-            f"Information: Liste erzeugt mit Ometha {__version__}\ndate: {TIMESTR}\nbaseurl: {PRM['b_url']}\nsets: {PRM['sets']}\nmetadataPrefix: {PRM['pref']}\ndatengeber: {PRM['dat_geb']}\ntimeout: {PRM['timeout']}\ndebug: {PRM['debug']}\nfromdate: {PRM['f_date']}\nuntildate: {PRM['u_date']}\noutputfolder: {PRM['out_f']}\nnumberofprocesses: {PRM['n_procs']}\nmaxtimeout: {PRM['max_timeout']}\nbatchsize: {PRM['batch_size']}\nids:\n"
-        )
+        yaml.safe_dump(doc, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        f.write("ids:\n")
         f.write("\n".join([f"- '{fid}'" for fid in ids]))
     return file
 
