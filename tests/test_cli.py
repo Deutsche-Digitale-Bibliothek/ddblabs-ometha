@@ -238,7 +238,7 @@ class TestDefaultCommand:
 
     def test_timeout_default(self):
         prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc"])
-        assert prm["timeout"] == 0
+        assert prm["timeout"] == 20
 
     def test_outputfolder_short(self):
         prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-o", "/tmp/myfolder"])
@@ -283,6 +283,8 @@ class TestDefaultCommand:
                 "-e",
                 "json",
                 "--debug",
+                "--batchsize",
+                "2000",
             ]
         )
         assert prm["b_url"] == "http://oai.example.org/"
@@ -297,6 +299,15 @@ class TestDefaultCommand:
         assert prm["out_f"] == "/tmp/harvest"
         assert prm["exp_type"] == "json"
         assert prm["debug"] is True
+        assert prm["batch_size"] == 2000
+
+    def test_batchsize_option(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "--batchsize", "500"])
+        assert prm["batch_size"] == 500
+
+    def test_batchsize_default_is_none(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc"])
+        assert prm["batch_size"] is None
 
     def test_conf_mode_false_for_default(self):
         prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc"])
@@ -698,6 +709,17 @@ class TestConfCommand:
         prm = self._parse_conf(yaml_data=data)
         assert prm["n_procs"] == 8
 
+    def test_batchsize_is_none_when_not_in_yaml(self):
+        """batchsize nicht in YAML → None (default 10000 greift in main.py)."""
+        prm = self._parse_conf()
+        assert prm["batch_size"] is None
+
+    def test_batchsize_from_yaml(self):
+        """batchsize in YAML wird als batch_size übernommen."""
+        data = {**YAML_CONF_MINIMAL, "batchsize": 500}
+        prm = self._parse_conf(yaml_data=data)
+        assert prm["batch_size"] == 500
+
     def test_trailing_whitespace_stripped_from_baseurl(self):
         data = {**YAML_CONF_MINIMAL, "baseurl": "http://x.org/oai/ "}
 
@@ -848,6 +870,14 @@ class TestAutoCommand:
         prm = parse_with(["auto", "-u", "http://oai.example.org/oai/request?metadataPrefix=oai_dc"])
         assert prm["b_url"] == "http://oai.example.org/oai/request"
 
+    def test_batchsize_option(self):
+        prm = parse_with(["auto", "-u", "http://oai.example.org/", "--batchsize", "5000"])
+        assert prm["batch_size"] == 5000
+
+    def test_batchsize_default_is_none(self):
+        prm = parse_with(["auto", "-u", "http://oai.example.org/"])
+        assert prm["batch_size"] is None
+
 
 # ---------------------------------------------------------------------------
 # `ids` Subcommand
@@ -936,3 +966,11 @@ class TestIdsCommand:
         with patch("ometha.cli.read_yaml_file", side_effect=mock_read_yaml):
             prm = parse_with(["ids", "--idfile", "myids.yaml"])
         assert prm["id_f"] == "myids.yaml"
+
+    def test_batchsize_option(self):
+        prm = self._parse_ids(extra_argv=["--batchsize", "500"])
+        assert prm["batch_size"] == 500
+
+    def test_batchsize_default_is_none(self):
+        prm = self._parse_ids()
+        assert prm["batch_size"] is None

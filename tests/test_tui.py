@@ -61,19 +61,21 @@ def mock_inputs(*values):
 #   2. Datengeber         → "testDG"
 #   3. Ausgabeordner      → "/tmp"
 #   4. Parallele Downloads→ "4"
-#   5. Exportformat       → "xml"
-#   6. Timeout            → "0"
-#   7. Base-URL           → "http://oai.example.org/"
-#   8. Metadata Prefix    → "oai_dc"
-#   9. Sets               → "" (keine Eingrenzung)
-#  10. Fromdate           → ""
-#  11. Untildate          → ""
+#   5. Dateien/Unterordner→ "10000"
+#   6. Exportformat       → "xml"
+#   7. Timeout            → "0"
+#   8. Base-URL           → "http://oai.example.org/"
+#   9. Metadata Prefix    → "oai_dc"
+#  10. Sets               → "" (keine Eingrenzung)
+#  11. Fromdate           → ""
+#  12. Untildate          → ""
 
 N_INPUTS = [
     "N",
     "testDG",
     "/tmp",
     "4",
+    "10000",
     "xml",
     "0",
     "http://oai.example.org/",
@@ -136,6 +138,7 @@ class TestOptionN:
             "testDG",
             "/tmp",
             "4",
+            "10000",
             "xml",
             "0",
             "http://oai.example.org/",
@@ -154,6 +157,7 @@ class TestOptionN:
             "testDG",
             "/tmp",
             "4",
+            "10000",
             "xml",
             "0",
             "http://oai.example.org/",
@@ -172,6 +176,7 @@ class TestOptionN:
             "testDG",
             "/tmp",
             "4",
+            "10000",
             "xml",
             "0",
             "http://oai.example.org/",
@@ -190,6 +195,7 @@ class TestOptionN:
             "testDG",
             "/tmp",
             "4",
+            "10000",
             "json",
             "0",
             "http://oai.example.org/",
@@ -209,6 +215,7 @@ class TestOptionN:
             "",
             "/tmp",
             "4",
+            "10000",
             "xml",
             "0",
             "http://oai.example.org/",
@@ -230,6 +237,7 @@ class TestOptionN:
             "testDG",
             "",
             "4",
+            "10000",
             "xml",
             "0",
             "http://oai.example.org/",
@@ -248,6 +256,7 @@ class TestOptionN:
             "N",
             "testDG",
             "/tmp",
+            "",
             "",
             "xml",
             "0",
@@ -268,6 +277,7 @@ class TestOptionN:
             "testDG",
             "/tmp",
             "4",
+            "10000",
             "lido",
             "xml",
             "0",
@@ -288,6 +298,7 @@ class TestOptionN:
             "testDG",
             "/tmp",
             "4",
+            "10000",
             "xml",
             "0",
             "keine-url",
@@ -308,6 +319,7 @@ class TestOptionN:
             "testDG",
             "/tmp",
             "4",
+            "10000",
             "xml",
             "0",
             "http://oai.example.org/",
@@ -328,6 +340,7 @@ class TestOptionN:
             "testDG",
             "/tmp",
             "4",
+            "10000",
             "xml",
             "0",
             "http://oai.example.org/",
@@ -347,6 +360,7 @@ class TestOptionN:
             "testDG",
             "/tmp",
             "4",
+            "10000",
             "xml",
             "0",
             "http://oai.example.org/",
@@ -367,6 +381,7 @@ class TestOptionN:
             "testDG",
             "/tmp",
             "4",
+            "10000",
             "xml",
             "0",
             "http://oai.example.org/",
@@ -406,17 +421,19 @@ class TestOptionE:
 #   2. Datengeber         → "testDG"
 #   3. Ausgabeordner      → "/tmp"
 #   4. Parallele Downloads→ "4"
-#   5. Exportformat       → "xml"
-#   6. Timeout            → "0"
-#   7. Base-URL           → "http://oai.example.org/"
-#   8. Metadata Prefix    → "oai_dc"
-#   9. ResumptionToken    → "abc123"
+#   5. Dateien/Unterordner→ "10000"
+#   6. Exportformat       → "xml"
+#   7. Timeout            → "0"
+#   8. Base-URL           → "http://oai.example.org/"
+#   9. Metadata Prefix    → "oai_dc"
+#  10. ResumptionToken    → "abc123"
 
 R_INPUTS = [
     "R",
     "testDG",
     "/tmp",
     "4",
+    "10000",
     "xml",
     "0",
     "http://oai.example.org/",
@@ -448,6 +465,7 @@ class TestOptionR:
             "testDG",
             "/tmp",
             "4",
+            "10000",
             "xml",
             "0",
             "http://oai.example.org/",
@@ -465,6 +483,7 @@ class TestOptionR:
             "testDG",
             "/tmp",
             "4",
+            "10000",
             "xml",
             "0",
             "http://oai.example.org/",
@@ -504,7 +523,7 @@ class TestOptionI:
         id_file = tmp_path / "ids.yaml"
         id_file.write_text(ID_FILE_CONTENT, encoding="utf-8")
 
-        inputs = ["I", "testDG", "/tmp", "4", "xml", "0", str(id_file)]
+        inputs = ["I", "testDG", "/tmp", "4", "10000", "xml", "0", str(id_file)]
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
         assert prm["b_url"] == "http://ids.example.org/oai"
@@ -513,7 +532,7 @@ class TestOptionI:
         id_file = tmp_path / "ids.yaml"
         id_file.write_text(ID_FILE_CONTENT, encoding="utf-8")
 
-        inputs = ["I", "testDG", "/tmp", "4", "xml", "0", str(id_file)]
+        inputs = ["I", "testDG", "/tmp", "4", "10000", "xml", "0", str(id_file)]
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
         assert prm["pref"] == "oai_dc"
@@ -522,7 +541,7 @@ class TestOptionI:
         id_file = tmp_path / "ids.yaml"
         id_file.write_text(ID_FILE_CONTENT, encoding="utf-8")
 
-        inputs = ["I", "testDG", "/tmp", "4", "xml", "0", str(id_file)]
+        inputs = ["I", "testDG", "/tmp", "4", "10000", "xml", "0", str(id_file)]
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
         assert prm["id_f"] == str(id_file)
@@ -537,6 +556,7 @@ class TestOptionI:
             "testDG",
             "/tmp",
             "4",
+            "10000",
             "xml",
             "0",
             "/does/not/exist.yaml",
@@ -550,7 +570,7 @@ class TestOptionI:
         id_file = tmp_path / "ids.yaml"
         id_file.write_text(ID_FILE_CONTENT, encoding="utf-8")
 
-        inputs = ["i", "testDG", "/tmp", "4", "xml", "0", str(id_file)]
+        inputs = ["i", "testDG", "/tmp", "4", "10000", "xml", "0", str(id_file)]
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
         assert prm["b_url"] == "http://ids.example.org/oai"
@@ -629,7 +649,7 @@ class TestPrmModeTui:
         assert prm["mode"] == "ui"
 
     def test_mode_ui_gesetzt_option_r(self, session):
-        inputs = ["R", "testDG", "/tmp", "4", "xml", "0", "http://oai.example.org/", "oai_dc", "sometoken"]
+        inputs = ["R", "testDG", "/tmp", "4", "10000", "xml", "0", "http://oai.example.org/", "oai_dc", "sometoken"]
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
         assert prm["mode"] == "ui"

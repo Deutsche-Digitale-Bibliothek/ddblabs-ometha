@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 ---
+## [2.3.0] - 2026-XX-XX
+
+### Fixed
+- `test_oai_mock`: `harvest_files` tests now use the mocked session instead of a bare `requests.Session()`, fixing tests that silently produced no output
+- `test_oai_mock`: file assertions now use `rglob` to find files in `part_*/` subfolders created by `harvest_files`
+- `test_oai_mock`: date value assertions account for `yaml.safe_dump` quoting strings as `'2025-01-01'`
+- `test_oai_mock`: resumption token file search now uses `.yaml` extension instead of `.txt`
+- `test_cli`: default timeout updated from `0` to `20`; added `batchsize` tests for all subcommands
+- `test_tui`: all input sequences updated to include `batchsize` prompt after `n_procs`
+
+---
+
 
 ## [2.2.0] - 2026-06-26
 
