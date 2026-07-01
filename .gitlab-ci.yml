@@ -1,5 +1,13 @@
 stages:
+  - test
   - release
+
+tests:
+  stage: test
+  image: python:3.12
+  script:
+    - pip install -e ".[dev]"
+    - pytest --cov=ometha
 
 create_release:
   stage: release
