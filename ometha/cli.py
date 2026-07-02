@@ -61,9 +61,16 @@ def parseargs() -> dict[str, Any]:
             action="store_true",
         )
         s.add_argument("--exporttype", "-e", help="Export format (xml/json)", default="xml")
+        s.add_argument(
+            "--deleted",
+            dest="deleted_handling",
+            choices=["keep", "skip", "folder"],
+            default="keep",
+            help="How to handle deleted records: keep (default), skip, or move to _deleted/ folder",
+        )
 
     def convert_common_args(args):
-        PRM["timeout"], PRM["n_procs"], PRM["out_f"], PRM["debug"], PRM["exp_type"], PRM["max_timeout"], PRM["batch_size"] = (
+        PRM["timeout"], PRM["n_procs"], PRM["out_f"], PRM["debug"], PRM["exp_type"], PRM["max_timeout"], PRM["batch_size"], PRM["deleted_handling"] = (
             args.timeout,
             args.parallel,
             args.outputfolder,
@@ -71,6 +78,7 @@ def parseargs() -> dict[str, Any]:
             args.exporttype,
             args.max_timeout,
             args.batch_size,
+            args.deleted_handling,
         )
 
     subparsers = {
@@ -239,6 +247,8 @@ def parseargs() -> dict[str, Any]:
         PRM["batch_size"] = read_yaml_file(PRM["conf_f"], ["batchsize"])[0]
         # max_timeout: read from config file, None means default (120s)
         PRM["max_timeout"] = read_yaml_file(PRM["conf_f"], ["maxtimeout"])[0]
+        # deleted_handling: read from config file, default "keep"
+        PRM["deleted_handling"] = read_yaml_file(PRM["conf_f"], ["deleted"])[0] or "keep"
         # resumptiontoken: gesetzt wenn Checkpoint-YAML verwendet wird
         PRM["res_tok"] = read_yaml_file(PRM["conf_f"], ["resumptiontoken"])[0]
         # Clean up base URL and prefix if they are not None

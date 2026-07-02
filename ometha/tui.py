@@ -88,6 +88,12 @@ def interactiveMode(session: Session) -> dict[str, Any]:
             or "xml"
         )
         PRM["timeout"] = float(input("Timeout in Sekunden (default: 20): ") or 0)
+        deleted_input = get_valid_input(
+            "Gelöschte Records behandeln (keep/skip/folder) (default: keep): ",
+            lambda x: x.lower() in {"keep", "skip", "folder"} or x == "",
+            "Bitte 'keep', 'skip' oder 'folder' eingeben.",
+        ).lower()
+        PRM["deleted_handling"] = deleted_input or "keep"
 
     if how_to_start == "E":
         sys.exit("Programm beendet.")

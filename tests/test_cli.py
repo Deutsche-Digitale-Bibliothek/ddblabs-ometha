@@ -300,6 +300,7 @@ class TestDefaultCommand:
         assert prm["exp_type"] == "json"
         assert prm["debug"] is True
         assert prm["batch_size"] == 2000
+        assert prm["deleted_handling"] == "keep"  # default
 
     def test_batchsize_option(self):
         prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "--batchsize", "500"])
@@ -308,6 +309,18 @@ class TestDefaultCommand:
     def test_batchsize_default_is_none(self):
         prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc"])
         assert prm["batch_size"] is None
+
+    def test_deleted_handling_default_is_keep(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc"])
+        assert prm["deleted_handling"] == "keep"
+
+    def test_deleted_handling_skip(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "--deleted", "skip"])
+        assert prm["deleted_handling"] == "skip"
+
+    def test_deleted_handling_folder(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "--deleted", "folder"])
+        assert prm["deleted_handling"] == "folder"
 
     def test_conf_mode_false_for_default(self):
         prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc"])
@@ -720,6 +733,15 @@ class TestConfCommand:
         prm = self._parse_conf(yaml_data=data)
         assert prm["batch_size"] == 500
 
+    def test_deleted_handling_default_keep_wenn_nicht_in_yaml(self):
+        prm = self._parse_conf()
+        assert prm["deleted_handling"] == "keep"
+
+    def test_deleted_handling_aus_yaml(self):
+        data = {**YAML_CONF_MINIMAL, "deleted": "skip"}
+        prm = self._parse_conf(yaml_data=data)
+        assert prm["deleted_handling"] == "skip"
+
     def test_trailing_whitespace_stripped_from_baseurl(self):
         data = {**YAML_CONF_MINIMAL, "baseurl": "http://x.org/oai/ "}
 
@@ -878,6 +900,14 @@ class TestAutoCommand:
         prm = parse_with(["auto", "-u", "http://oai.example.org/"])
         assert prm["batch_size"] is None
 
+    def test_deleted_handling_default_is_keep(self):
+        prm = parse_with(["auto", "-u", "http://oai.example.org/"])
+        assert prm["deleted_handling"] == "keep"
+
+    def test_deleted_handling_folder(self):
+        prm = parse_with(["auto", "-u", "http://oai.example.org/", "--deleted", "folder"])
+        assert prm["deleted_handling"] == "folder"
+
 
 # ---------------------------------------------------------------------------
 # `ids` Subcommand
@@ -974,3 +1004,11 @@ class TestIdsCommand:
     def test_batchsize_default_is_none(self):
         prm = self._parse_ids()
         assert prm["batch_size"] is None
+
+    def test_deleted_handling_default_is_keep(self):
+        prm = self._parse_ids()
+        assert prm["deleted_handling"] == "keep"
+
+    def test_deleted_handling_skip(self):
+        prm = self._parse_ids(extra_argv=["--deleted", "skip"])
+        assert prm["deleted_handling"] == "skip"

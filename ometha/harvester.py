@@ -1,3 +1,12 @@
+def is_deleted(response_text: str) -> bool:
+        """Return True if the OAI record has status='deleted' in its header."""
+        try:
+            from lxml import etree as _etree
+            root = _etree.fromstring(response_text.encode())
+            header = root.find(f".//{NAMESPACE}header")
+            return header is not None and header.get("status") == "deleted"
+        except Exception:
+            return False
 import json
 import os
 import re
@@ -399,6 +408,21 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
                     if errors := re.findall(r'error\scode="(.+)">(.+)</error>', resp.text):
                         logger.warning(f"Datei {url} konnte nicht geharvestet werden ('{errors[0][0]}')")
                         return {"failed_download": oai_id}
+                    # Handle deleted records
+                    if is_deleted(resp.text):
+                        deleted_handling = PRM.get("deleted_handling", "keep")
+                        if deleted_handling == "skip":
+                            logger.info(f"Gelöschter Record übersprungen: {oai_id}")
+                            return {"skipped_deleted": oai_id}
+                        elif deleted_handling == "folder":
+                            deleted_folder = os.path.join(folder, "_deleted")
+                            os.makedirs(deleted_folder, exist_ok=True)
+                            save_file(oai_id, deleted_folder, resp.text, export_type)
+                            logger.info(f"Gelöschter Record in _deleted/ verschoben: {oai_id}")
+                            return {"deleted": oai_id}
+                        # else "keep": fall through to normal save
+                        else:
+                            logger.info(f"Gelöschter Record gespeichert (keep): {oai_id}")
                     if not save_file(oai_id, target_folder, resp.text, export_type):
                         return {"failed_download": oai_id}
             except RequestException as e:
@@ -451,6 +475,12 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
         failed_files.get("failed_id", []),
         failed_files.get("failed_download", []),
     )
+    skipped_deleted = failed_files.get("skipped_deleted", [])
+    moved_deleted   = failed_files.get("deleted", [])
+    if skipped_deleted:
+        print_and_log(f"{INFO}{len(skipped_deleted)} gelöschte Records übersprungen.", logger, "info")
+    if moved_deleted:
+        print_and_log(f"{INFO}{len(moved_deleted)} gelöschte Records in _deleted/ verschoben.", logger, "info")
     logger.info("Harvesting beendet")
 
     return failed_download, failed_ids

@@ -7,6 +7,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ---
 ## [2.3.0] - 2026-XX-XX
 
+### Added
+- New parameter `--deleted` (CLI) / `deleted` (YAML config) to control how records
+  with `status="deleted"` are handled:
+  - `keep` (default): records are saved normally, preserving existing behavior
+  - `skip`: records are discarded and only logged
+  - `folder`: records are moved to a `_deleted/` subfolder in the output directory
+  Available in all modes: CLI, TUI, GUI, and YAML config
+
+### Changed
+- `harvest_files` logs a summary of skipped/moved deleted records at the end of each run
+
 ### Fixed
 - `test_oai_mock`: `harvest_files` tests now use the mocked session instead of a bare `requests.Session()`, fixing tests that silently produced no output
 - `test_oai_mock`: file assertions now use `rglob` to find files in `part_*/` subfolders created by `harvest_files`
