@@ -14,6 +14,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - `skip`: records are discarded and only logged
   - `folder`: records are moved to a `_deleted/` subfolder in the output directory
   Available in all modes: CLI, TUI, GUI, and YAML config
+- Records without a grandchild node under `//metadata` (e.g. empty metadata,
+  HTML fragments) are automatically moved to an `_invalid/` subfolder and logged
+  as a warning. This check runs after the deleted-record check, so deleted records
+  are never misclassified as invalid. A summary count is printed at the end of
+  each harvesting run.
 
 ### Changed
 - `harvest_files` logs a summary of skipped/moved deleted records at the end of each run
