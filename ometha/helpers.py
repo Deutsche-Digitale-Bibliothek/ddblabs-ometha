@@ -45,6 +45,7 @@ PRM = {
     "batch_size": None,  # files per subfolder: int (default 10000)
     "mode": None,  # mode: str "ui" or "cli"
     "exp_type": None,  # export type either "xml" or "json"
+    "deleted_handling": "keep",  # how to handle deleted records: "keep", "skip", "folder"
 }
 
 

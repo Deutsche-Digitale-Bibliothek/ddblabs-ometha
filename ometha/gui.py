@@ -121,6 +121,11 @@ def index():
                 timeout = ui.number("Timeout (s)", value=0, min=0).classes("flex-1")
                 batch_size = ui.number("Dateien pro Unterordner", value=10000, min=1).classes("flex-1")
             exp_type = ui.select(["xml", "json"], value="xml", label="Exportformat").classes("w-full")
+            deleted_handling = ui.select(
+                ["keep", "skip", "folder"],
+                value="keep",
+                label="Gelöschte Records (keep = mitspeichern, skip = verwerfen, folder = _deleted/)",
+            ).classes("w-full")
 
         # Fehleranzeige
         error_banner = ui.label("").classes("text-red-600 font-medium hidden")
@@ -237,6 +242,7 @@ def index():
             "timeout": float(timeout.value or 0),
             "batch_size": int(batch_size.value or 10000),
             "exp_type": exp_type.value,
+            "deleted_handling": deleted_handling.value,
             "debug": False,
             "res_tok": None,
             "id_f": None,

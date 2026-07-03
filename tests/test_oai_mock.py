@@ -58,6 +58,9 @@ def prm_base():
         "n_procs": 4,
         "mode": "cli",
         "exp_type": "xml",
+        "max_timeout": None,
+        "batch_size": None,
+        "deleted_handling": "keep",
     }
 
 
@@ -1123,3 +1126,133 @@ class TestJsonConversionError:
         assert failed_dl == []
         assert failed_ids == []
         assert len(list(tmp_path.rglob("*.json"))) == 1
+
+
+# ---------------------------------------------------------------------------
+# Deleted Record Handling
+# ---------------------------------------------------------------------------
+
+
+class TestDeletedRecordHandling:
+    """Tests für die drei deleted_handling-Modi: keep, skip, folder."""
+
+    def _make_prm(self, prm_base, tmp_path, mode):
+        return {**prm_base, "deleted_handling": mode, "out_f": str(tmp_path)}
+
+    def test_keep_speichert_deleted_record(self, requests_mock, prm_base, tmp_path, session):
+        """keep: gelöschter Record wird normal in den Ausgabeordner gespeichert."""
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord("oai:mock:del001", deleted=True)]
+        OAIMock(records=records).register(requests_mock)
+
+        prm = self._make_prm(prm_base, tmp_path, "keep")
+        failed_dl, failed_ids = harvest_files(["oai:mock:del001"], prm, str(tmp_path), session=session)
+
+        all_files = list(tmp_path.rglob("*.xml"))
+        assert len(all_files) == 1
+        assert failed_dl == []
+        assert failed_ids == []
+        # Datei darf NICHT im _deleted/-Unterordner liegen
+        assert all_files[0].parent.name != "_deleted"
+
+    def test_skip_verwirft_deleted_record(self, requests_mock, prm_base, tmp_path, session):
+        """skip: gelöschter Record erzeugt keine Datei und landet nicht in failed."""
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord("oai:mock:del002", deleted=True)]
+        OAIMock(records=records).register(requests_mock)
+
+        prm = self._make_prm(prm_base, tmp_path, "skip")
+        failed_dl, failed_ids = harvest_files(["oai:mock:del002"], prm, str(tmp_path), session=session)
+
+        assert list(tmp_path.rglob("*.xml")) == []
+        assert failed_dl == []
+        assert failed_ids == []
+
+    def test_folder_verschiebt_deleted_record(self, requests_mock, prm_base, tmp_path, session):
+        """folder: gelöschter Record landet in _deleted/-Unterordner."""
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord("oai:mock:del003", deleted=True)]
+        OAIMock(records=records).register(requests_mock)
+
+        prm = self._make_prm(prm_base, tmp_path, "folder")
+        failed_dl, failed_ids = harvest_files(["oai:mock:del003"], prm, str(tmp_path), session=session)
+
+        deleted_files = list((tmp_path / "_deleted").rglob("*.xml"))
+        assert len(deleted_files) == 1
+        # Kein File im normalen Ausgabeordner
+        normal_files = [f for f in tmp_path.rglob("*.xml") if "_deleted" not in str(f)]
+        assert normal_files == []
+        assert failed_dl == []
+        assert failed_ids == []
+
+    def test_folder_erstellt_deleted_unterordner(self, requests_mock, prm_base, tmp_path, session):
+        """folder: _deleted/-Ordner wird automatisch angelegt."""
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord("oai:mock:del004", deleted=True)]
+        OAIMock(records=records).register(requests_mock)
+
+        prm = self._make_prm(prm_base, tmp_path, "folder")
+        harvest_files(["oai:mock:del004"], prm, str(tmp_path), session=session)
+
+        assert (tmp_path / "_deleted").is_dir()
+
+    def test_keep_mischung_deleted_und_normal(self, requests_mock, prm_base, tmp_path, session):
+        """keep: normale und gelöschte Records landen beide im Ausgabeordner."""
+        from ometha.harvester import harvest_files
+
+        records = [
+            OAIRecord("oai:mock:normal001"),
+            OAIRecord("oai:mock:del005", deleted=True),
+        ]
+        OAIMock(records=records).register(requests_mock)
+
+        prm = self._make_prm(prm_base, tmp_path, "keep")
+        failed_dl, failed_ids = harvest_files(
+            ["oai:mock:normal001", "oai:mock:del005"], prm, str(tmp_path), session=session
+        )
+
+        assert len(list(tmp_path.rglob("*.xml"))) == 2
+        assert failed_dl == []
+
+    def test_skip_mischung_nur_normale_gespeichert(self, requests_mock, prm_base, tmp_path, session):
+        """skip: nur normale Records werden gespeichert, deleted verworfen."""
+        from ometha.harvester import harvest_files
+
+        records = [
+            OAIRecord("oai:mock:normal002"),
+            OAIRecord("oai:mock:del006", deleted=True),
+        ]
+        OAIMock(records=records).register(requests_mock)
+
+        prm = self._make_prm(prm_base, tmp_path, "skip")
+        failed_dl, failed_ids = harvest_files(
+            ["oai:mock:normal002", "oai:mock:del006"], prm, str(tmp_path), session=session
+        )
+
+        all_files = list(tmp_path.rglob("*.xml"))
+        assert len(all_files) == 1
+        assert "normal002" in all_files[0].name
+
+    def test_folder_mischung_getrennte_ordner(self, requests_mock, prm_base, tmp_path, session):
+        """folder: normale Records in part_*/, deleted in _deleted/."""
+        from ometha.harvester import harvest_files
+
+        records = [
+            OAIRecord("oai:mock:normal003"),
+            OAIRecord("oai:mock:del007", deleted=True),
+        ]
+        OAIMock(records=records).register(requests_mock)
+
+        prm = self._make_prm(prm_base, tmp_path, "folder")
+        harvest_files(
+            ["oai:mock:normal003", "oai:mock:del007"], prm, str(tmp_path), session=session
+        )
+
+        normal_files = [f for f in tmp_path.rglob("*.xml") if "_deleted" not in str(f)]
+        deleted_files = list((tmp_path / "_deleted").rglob("*.xml"))
+        assert len(normal_files) == 1
+        assert len(deleted_files) == 1

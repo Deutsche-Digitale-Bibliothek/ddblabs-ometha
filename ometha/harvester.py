@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlparse
 
 import xmltodict
 import yaml
+from lxml import etree
 from yaspin import yaspin
 from yaspin.spinners import Spinners
 from loguru import logger
@@ -271,6 +272,28 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
                 of.write(response)
             return True
 
+    def is_deleted(response_text: str) -> bool:
+        """Return True if the OAI record has status='deleted' in its header."""
+        try:
+            root = etree.fromstring(response_text.encode())
+            header = root.find(f".//{NAMESPACE}header")
+            return header is not None and header.get("status") == "deleted"
+        except Exception:
+            return False
+
+    def is_invalid(response_text: str) -> bool:
+        """Return True if the record has no grandchild node under //metadata.
+
+        A valid record must have at least one element two levels below <metadata>
+        (e.g. <oai_dc:dc><dc:title>…</dc:title></oai_dc:dc>). Records without
+        this structure are considered invalid (empty metadata, HTML fragments, etc.).
+        """
+        try:
+            root = etree.fromstring(response_text.encode())
+            return not root.findall(f".//{NAMESPACE}metadata/*/*")
+        except Exception:
+            return True  # unparseable XML → treat as invalid
+
     if ids:
         print_and_log(f"{SEP_LINE}Harveste {len(ids)} IDs.", logger, "info")
     else:
@@ -399,6 +422,27 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
                     if errors := re.findall(r'error\scode="(.+)">(.+)</error>', resp.text):
                         logger.warning(f"Datei {url} konnte nicht geharvestet werden ('{errors[0][0]}')")
                         return {"failed_download": oai_id}
+                    # Handle deleted records
+                    if is_deleted(resp.text):
+                        deleted_handling = PRM.get("deleted_handling", "keep")
+                        if deleted_handling == "skip":
+                            logger.info(f"Gelöschter Record übersprungen: {oai_id}")
+                            return {"skipped_deleted": oai_id}
+                        elif deleted_handling == "folder":
+                            deleted_folder = os.path.join(folder, "_deleted")
+                            os.makedirs(deleted_folder, exist_ok=True)
+                            save_file(oai_id, deleted_folder, resp.text, export_type)
+                            logger.info(f"Gelöschter Record in _deleted/ verschoben: {oai_id}")
+                            return {"deleted": oai_id}
+                        else:
+                            logger.info(f"Gelöschter Record gespeichert (keep): {oai_id}")
+                    # Handle invalid records (no //metadata/*/* grandchild node)
+                    elif is_invalid(resp.text):
+                        invalid_folder = os.path.join(folder, "_invalid")
+                        os.makedirs(invalid_folder, exist_ok=True)
+                        save_file(oai_id, invalid_folder, resp.text, export_type)
+                        logger.warning(f"Ungültiger Record (kein //metadata/*/*) in _invalid/ verschoben: {oai_id}")
+                        return {"invalid": oai_id}
                     if not save_file(oai_id, target_folder, resp.text, export_type):
                         return {"failed_download": oai_id}
             except RequestException as e:
@@ -451,6 +495,15 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
         failed_files.get("failed_id", []),
         failed_files.get("failed_download", []),
     )
+    skipped_deleted = failed_files.get("skipped_deleted", [])
+    moved_deleted   = failed_files.get("deleted", [])
+    moved_invalid   = failed_files.get("invalid", [])
+    if skipped_deleted:
+        print_and_log(f"{INFO}{len(skipped_deleted)} gelöschte Records übersprungen.", logger, "info")
+    if moved_deleted:
+        print_and_log(f"{INFO}{len(moved_deleted)} gelöschte Records in _deleted/ verschoben.", logger, "info")
+    if moved_invalid:
+        print_and_log(f"{INFO}{len(moved_invalid)} ungültige Records in _invalid/ verschoben.", logger, "info")
     logger.info("Harvesting beendet")
 
     return failed_download, failed_ids
