@@ -121,11 +121,6 @@ def index():
                 timeout = ui.number("Timeout (s)", value=0, min=0).classes("flex-1")
                 batch_size = ui.number("Dateien pro Unterordner", value=10000, min=1).classes("flex-1")
             exp_type = ui.select(["xml", "json"], value="xml", label="Exportformat").classes("w-full")
-            deleted_handling = ui.select(
-                ["keep", "skip", "folder"],
-                value="keep",
-                label="Gelöschte Records (keep = mitspeichern, skip = verwerfen, folder = _deleted/)",
-            ).classes("w-full")
 
         # Fehleranzeige
         error_banner = ui.label("").classes("text-red-600 font-medium hidden")
@@ -242,7 +237,6 @@ def index():
             "timeout": float(timeout.value or 0),
             "batch_size": int(batch_size.value or 10000),
             "exp_type": exp_type.value,
-            "deleted_handling": deleted_handling.value,
             "debug": False,
             "res_tok": None,
             "id_f": None,
@@ -253,8 +247,8 @@ def index():
         }
 
         # Ausgabeordner anlegen
-        folder = os.path.join(prm["out_f"], prm["dat_geb"], TIMESTR)
-        folder = folder.replace(":", "_")
+        safe_timestr = TIMESTR.replace(":", "_")
+        folder = os.path.join(prm["out_f"], prm["dat_geb"], safe_timestr)
         os.makedirs(folder, exist_ok=True)
 
         # UI: laufend
@@ -265,19 +259,31 @@ def index():
 
         try:
             # Phase 1: Identifier sammeln
-            log("Sammle Identifier …")
-            harvest_url = f"{prm['b_url']}?verb=ListIdentifiers&metadataPrefix={prm['pref']}"
+            # Basis-URL ohne Set-Parameter
+            base_harvest_url = f"{prm['b_url']}?verb=ListIdentifiers&metadataPrefix={prm['pref']}"
             if prm["f_date"]:
-                harvest_url += f"&from={prm['f_date']}"
+                base_harvest_url += f"&from={prm['f_date']}"
             if prm["u_date"]:
-                harvest_url += f"&until={prm['u_date']}"
-            if prm["sets"] and prm["sets"][0].get("additive"):
-                harvest_url += f"&set={prm['sets'][0]['additive'][0]}"
+                base_harvest_url += f"&until={prm['u_date']}"
+
+            additive_sets = prm["sets"][0].get("additive") if prm["sets"] else []
 
             def on_list_size(n: int):
                 log(f"Angegebene ListSize: {n}")
 
-            ids = await run.io_bound(get_identifier, prm, harvest_url, session, on_list_size)
+            # Für jedes Set einen eigenen get_identifier-Lauf, ohne Sets alle IDs
+            if additive_sets:
+                ids = []
+                for set_spec in additive_sets:
+                    log(f"Sammle Identifier für Set '{set_spec}' …")
+                    set_url = base_harvest_url + f"&set={set_spec}"
+                    set_ids = await run.io_bound(get_identifier, prm, set_url, session, on_list_size)
+                    log(f"  {len(set_ids)} Identifier in Set '{set_spec}'.")
+                    ids.extend(set_ids)
+                ids = list(dict.fromkeys(ids))  # Duplikate entfernen, Reihenfolge behalten
+            else:
+                log("Sammle Identifier …")
+                ids = await run.io_bound(get_identifier, prm, base_harvest_url, session, on_list_size)
             log(f"{len(ids)} Identifier gefunden.")
 
             # Phase 2: Dateien herunterladen
