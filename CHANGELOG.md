@@ -30,6 +30,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `test_oai_mock`: resumption token file search now uses `.yaml` extension instead of `.txt`
 - `test_cli`: default timeout updated from `0` to `20`; added `batchsize` tests for all subcommands
 - `test_tui`: all input sequences updated to include `batchsize` prompt after `n_procs`
+- GUI: when multiple sets were selected, only the first set was harvested;
+  each set is now collected in a separate ListIdentifiers run and the results
+  are merged and deduplicated
+- GUI: on Windows, the colon in the drive letter (e.g. `C:`) was replaced
+  by `_` when building the output folder path; only the timestamp portion
+  is now sanitized
 
 ---
 
