@@ -322,6 +322,44 @@ class TestDefaultCommand:
         prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "--deleted", "folder"])
         assert prm["deleted_handling"] == "folder"
 
+    def test_gentle_default_is_false(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc"])
+        assert prm["gentle"] is False
+
+    def test_gentle_sets_conservative_defaults(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "--gentle"])
+        assert prm["gentle"] is True
+        assert prm["n_procs"] == 1
+        assert prm["timeout"] == 30
+        assert prm["ratelimit"] == 20
+
+    def test_gentle_timeout_overridable(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "--gentle", "-t", "60"])
+        assert prm["gentle"] is True
+        assert prm["timeout"] == 60
+        assert prm["n_procs"] == 1      # nicht überschrieben → Gentle-Default
+        assert prm["ratelimit"] == 20   # nicht überschrieben → Gentle-Default
+
+    def test_gentle_parallel_overridable(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "--gentle", "-p", "4"])
+        assert prm["n_procs"] == 4
+        assert prm["timeout"] == 30     # nicht überschrieben → Gentle-Default
+
+    def test_gentle_ratelimit_overridable(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "--gentle", "--ratelimit", "5"])
+        assert prm["ratelimit"] == 5.0
+        assert prm["n_procs"] == 1      # nicht überschrieben → Gentle-Default
+
+    def test_ratelimit_ohne_gentle(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "--ratelimit", "10"])
+        assert prm["ratelimit"] == 10.0
+        assert prm["gentle"] is False
+        assert prm["n_procs"] is None   # kein Gentle → keine Änderung
+
+    def test_ratelimit_default_is_none(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc"])
+        assert prm["ratelimit"] is None
+
     def test_conf_mode_false_for_default(self):
         prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc"])
         assert prm["conf_m"] is not True
@@ -908,6 +946,23 @@ class TestAutoCommand:
         prm = parse_with(["auto", "-u", "http://oai.example.org/", "--deleted", "folder"])
         assert prm["deleted_handling"] == "folder"
 
+    def test_gentle_sets_conservative_defaults(self):
+        prm = parse_with(["auto", "-u", "http://oai.example.org/", "--gentle"])
+        assert prm["gentle"] is True
+        assert prm["n_procs"] == 1
+        assert prm["timeout"] == 30
+        assert prm["ratelimit"] == 20
+
+    def test_gentle_overridable(self):
+        prm = parse_with(["auto", "-u", "http://oai.example.org/", "--gentle", "-p", "2", "--ratelimit", "5"])
+        assert prm["n_procs"] == 2
+        assert prm["ratelimit"] == 5.0
+        assert prm["timeout"] == 30     # nicht überschrieben → Gentle-Default
+
+    def test_ratelimit_default_is_none(self):
+        prm = parse_with(["auto", "-u", "http://oai.example.org/"])
+        assert prm["ratelimit"] is None
+
 
 # ---------------------------------------------------------------------------
 # `ids` Subcommand
@@ -1012,3 +1067,14 @@ class TestIdsCommand:
     def test_deleted_handling_skip(self):
         prm = self._parse_ids(extra_argv=["--deleted", "skip"])
         assert prm["deleted_handling"] == "skip"
+
+    def test_gentle_sets_conservative_defaults(self):
+        prm = self._parse_ids(extra_argv=["--gentle"])
+        assert prm["gentle"] is True
+        assert prm["n_procs"] == 1
+        assert prm["timeout"] == 30
+        assert prm["ratelimit"] == 20
+
+    def test_ratelimit_default_is_none(self):
+        prm = self._parse_ids()
+        assert prm["ratelimit"] is None

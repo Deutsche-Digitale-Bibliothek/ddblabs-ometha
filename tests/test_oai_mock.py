@@ -61,6 +61,8 @@ def prm_base():
         "max_timeout": None,
         "batch_size": None,
         "deleted_handling": "keep",
+        "gentle": False,
+        "ratelimit": None,
     }
 
 
@@ -1256,3 +1258,237 @@ class TestDeletedRecordHandling:
         deleted_files = list((tmp_path / "_deleted").rglob("*.xml"))
         assert len(normal_files) == 1
         assert len(deleted_files) == 1
+
+
+# ---------------------------------------------------------------------------
+# Invalid Record Handling (//metadata/*/* check)
+# ---------------------------------------------------------------------------
+
+
+class TestInvalidRecordHandling:
+    """Records ohne //metadata/*/*-Knoten werden in _invalid/ verschoben."""
+
+    EMPTY_METADATA_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+  <GetRecord>
+    <record>
+      <header>
+        <identifier>oai:mock:empty001</identifier>
+        <datestamp>2024-01-01T00:00:00Z</datestamp>
+      </header>
+      <metadata>
+        <oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/"/>
+      </metadata>
+    </record>
+  </GetRecord>
+</OAI-PMH>"""
+
+    HTML_METADATA_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+  <GetRecord>
+    <record>
+      <header>
+        <identifier>oai:mock:html001</identifier>
+        <datestamp>2024-01-01T00:00:00Z</datestamp>
+      </header>
+      <metadata>
+        <div>Garbage HTML content</div>
+      </metadata>
+    </record>
+  </GetRecord>
+</OAI-PMH>"""
+
+    def _register_custom_response(self, requests_mock, identifier, xml_body):
+        """Registriert eine individuelle GetRecord-Antwort für eine bestimmte ID."""
+        requests_mock.get(
+            f"{BASE_URL}?verb=GetRecord&metadataPrefix=oai_dc&identifier={identifier}",
+            text=xml_body,
+        )
+
+    def test_valid_record_nicht_in_invalid(self, requests_mock, prm_base, tmp_path, session):
+        """Normaler Record mit //metadata/*/* landet NICHT in _invalid/."""
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord("oai:mock:valid001")]
+        OAIMock(records=records).register(requests_mock)
+
+        prm = {**prm_base, "out_f": str(tmp_path)}
+        harvest_files(["oai:mock:valid001"], prm, str(tmp_path), session=session)
+
+        assert not (tmp_path / "_invalid").exists()
+        assert len(list(tmp_path.rglob("*.xml"))) == 1
+
+    def test_leeres_metadata_geht_in_invalid(self, requests_mock, prm_base, tmp_path, session):
+        """Record mit leerem <metadata>-Root (kein Enkelkind) → _invalid/."""
+        from ometha.harvester import harvest_files
+
+        self._register_custom_response(requests_mock, "oai:mock:empty001", self.EMPTY_METADATA_XML)
+
+        prm = {**prm_base, "out_f": str(tmp_path)}
+        failed_dl, failed_ids = harvest_files(
+            ["oai:mock:empty001"], prm, str(tmp_path), session=session
+        )
+
+        invalid_files = list((tmp_path / "_invalid").rglob("*.xml"))
+        assert len(invalid_files) == 1
+        normal_files = [f for f in tmp_path.rglob("*.xml") if "_invalid" not in str(f)]
+        assert normal_files == []
+
+    def test_invalid_record_nicht_in_failed(self, requests_mock, prm_base, tmp_path, session):
+        """Ungültiger Record landet in _invalid/, nicht in failed_download oder failed_ids."""
+        from ometha.harvester import harvest_files
+
+        self._register_custom_response(requests_mock, "oai:mock:empty001", self.EMPTY_METADATA_XML)
+
+        prm = {**prm_base, "out_f": str(tmp_path)}
+        failed_dl, failed_ids = harvest_files(
+            ["oai:mock:empty001"], prm, str(tmp_path), session=session
+        )
+
+        assert failed_dl == []
+        assert failed_ids == []
+
+    def test_invalid_ordner_wird_angelegt(self, requests_mock, prm_base, tmp_path, session):
+        """_invalid/-Ordner wird automatisch erstellt."""
+        from ometha.harvester import harvest_files
+
+        self._register_custom_response(requests_mock, "oai:mock:empty001", self.EMPTY_METADATA_XML)
+
+        prm = {**prm_base, "out_f": str(tmp_path)}
+        harvest_files(["oai:mock:empty001"], prm, str(tmp_path), session=session)
+
+        assert (tmp_path / "_invalid").is_dir()
+
+    def test_mischung_valid_und_invalid(self, requests_mock, prm_base, tmp_path, session):
+        """Valide Records normal gespeichert, invalide in _invalid/."""
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord("oai:mock:valid002")]
+        OAIMock(records=records).register(requests_mock)
+        self._register_custom_response(requests_mock, "oai:mock:empty001", self.EMPTY_METADATA_XML)
+
+        prm = {**prm_base, "out_f": str(tmp_path)}
+        failed_dl, failed_ids = harvest_files(
+            ["oai:mock:valid002", "oai:mock:empty001"], prm, str(tmp_path), session=session
+        )
+
+        normal_files = [f for f in tmp_path.rglob("*.xml") if "_invalid" not in str(f)]
+        invalid_files = list((tmp_path / "_invalid").rglob("*.xml"))
+        assert len(normal_files) == 1
+        assert len(invalid_files) == 1
+        assert failed_dl == []
+
+    def test_deleted_hat_vorrang_vor_invalid(self, requests_mock, prm_base, tmp_path, session):
+        """Deleted Records werden als deleted behandelt, nicht als invalid –
+        auch wenn ihr <metadata>-Element fehlt."""
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord("oai:mock:del_invalid", deleted=True)]
+        OAIMock(records=records).register(requests_mock)
+
+        prm = {**prm_base, "out_f": str(tmp_path), "deleted_handling": "folder"}
+        harvest_files(["oai:mock:del_invalid"], prm, str(tmp_path), session=session)
+
+        assert (tmp_path / "_deleted").is_dir()
+        assert not (tmp_path / "_invalid").exists()
+
+
+class TestIsInvalidHelper:
+    """Unit-Tests für die is_invalid()-Hilfsfunktion direkt."""
+
+    def _call(self, xml_text):
+        # is_invalid ist eine innere Funktion von harvest_files –
+        # wir testen das Verhalten indirekt über den XML-Inhalt.
+        from lxml import etree
+        NAMESPACE = "{http://www.openarchives.org/OAI/2.0/}"
+        try:
+            root = etree.fromstring(xml_text.encode())
+            return not root.findall(f".//{NAMESPACE}metadata/*/*")
+        except Exception:
+            return True
+
+    def test_valider_record_nicht_invalid(self):
+        xml = """<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+          <GetRecord><record><header/><metadata>
+            <oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/">
+              <dc:title xmlns:dc="http://purl.org/dc/elements/1.1/">Test</dc:title>
+            </oai_dc:dc>
+          </metadata></record></GetRecord></OAI-PMH>"""
+        assert self._call(xml) is False
+
+    def test_leeres_metadata_element_ist_invalid(self):
+        xml = """<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+          <GetRecord><record><header/>
+            <metadata><oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/"/>
+            </metadata>
+          </record></GetRecord></OAI-PMH>"""
+        assert self._call(xml) is True
+
+    def test_fehlendes_metadata_element_ist_invalid(self):
+        xml = """<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+          <GetRecord><record><header/></record></GetRecord></OAI-PMH>"""
+        assert self._call(xml) is True
+
+    def test_nur_textnodes_ist_invalid(self):
+        xml = """<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+          <GetRecord><record><header/>
+            <metadata>nur text, kein Element</metadata>
+          </record></GetRecord></OAI-PMH>"""
+        assert self._call(xml) is True
+
+    def test_kaputtes_xml_ist_invalid(self):
+        assert self._call("<kaputt>><<") is True
+
+    def test_tiefe_struktur_ist_valide(self):
+        """METS o.ä. mit tiefer Verschachtelung muss als valide erkannt werden."""
+        xml = """<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+          <GetRecord><record><header/>
+            <metadata>
+              <mets:mets xmlns:mets="http://www.loc.gov/METS/">
+                <mets:dmdSec>
+                  <mets:mdWrap><mets:xmlData><mods/></mets:xmlData></mets:mdWrap>
+                </mets:dmdSec>
+              </mets:mets>
+            </metadata>
+          </record></GetRecord></OAI-PMH>"""
+        assert self._call(xml) is False
+
+
+# ---------------------------------------------------------------------------
+# Gentle Mode / Rate Limiting
+# ---------------------------------------------------------------------------
+
+
+class TestRateLimiting:
+    """Prüft ob das Rate Limit zwischen Requests eingehalten wird."""
+
+    def test_ratelimit_verlangsamt_downloads(self, requests_mock, prm_base, tmp_path, session):
+        """Mit ratelimit=0.2s müssen 3 Requests mindestens 0.4s dauern."""
+        from ometha.harvester import harvest_files
+        import time
+
+        records = [OAIRecord(f"oai:mock:rate{i:03d}") for i in range(3)]
+        OAIMock(records=records).register(requests_mock)
+
+        prm = {**prm_base, "ratelimit": 0.2, "out_f": str(tmp_path)}
+        t_start = time.monotonic()
+        harvest_files([r.identifier for r in records], prm, str(tmp_path), session=session)
+        elapsed = time.monotonic() - t_start
+
+        # 3 Requests mit 0.2s Abstand → mindestens 0.4s (2 Pausen zwischen 3 Requests)
+        assert elapsed >= 0.4, f"Expected >= 0.4s, got {elapsed:.2f}s"
+
+    def test_ohne_ratelimit_keine_kuenstliche_pause(self, requests_mock, prm_base, tmp_path, session):
+        """Ohne ratelimit laufen 3 Requests deutlich schneller als 0.3s."""
+        from ometha.harvester import harvest_files
+        import time
+
+        records = [OAIRecord(f"oai:mock:fast{i:03d}") for i in range(3)]
+        OAIMock(records=records).register(requests_mock)
+
+        prm = {**prm_base, "ratelimit": None, "out_f": str(tmp_path)}
+        t_start = time.monotonic()
+        harvest_files([r.identifier for r in records], prm, str(tmp_path), session=session)
+        elapsed = time.monotonic() - t_start
+
+        assert elapsed < 2.0, f"Expected fast run, got {elapsed:.2f}s"

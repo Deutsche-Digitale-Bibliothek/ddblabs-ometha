@@ -10,6 +10,13 @@ from lxml import etree
 from requests import Response
 from requests.exceptions import ConnectionError, HTTPError, RetryError, Timeout
 
+# Defaults für den --gentle Modus (überschreibbar durch explizite Parameter)
+GENTLE_DEFAULTS = {
+    "n_procs": 1,
+    "timeout": 30,
+    "ratelimit": 20,
+}
+
 # define global variables reused throughout the code
 SEP_LINE = "--------------------------------------\n"
 ACHTUNG = f"{Fore.YELLOW}Achtung:\n {Fore.WHITE}"
@@ -45,6 +52,8 @@ PRM = {
     "batch_size": None,  # files per subfolder: int (default 10000)
     "mode": None,  # mode: str "ui" or "cli"
     "exp_type": None,  # export type either "xml" or "json"
+    "gentle": False,  # gentle mode: conservative defaults for sensitive endpoints
+    "ratelimit": None,  # minimum seconds between requests: float | None
     "deleted_handling": "keep",  # how to handle deleted records: "keep", "skip", "folder"
 }
 

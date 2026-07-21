@@ -88,7 +88,7 @@ Ometha enthält einen grafischen Modus auf Basis von [NiceGUI](https://nicegui.i
 ## Starten
 
 ```bash
-uv run ometha gui
+ometha gui
 ```
 
 Der Browser öffnet sich automatisch unter `http://localhost:8765`.
@@ -110,12 +110,14 @@ Nach dem Verlassen des Base-URL-Felds (oder per Klick auf den Globus-Button nebe
 |---------------------------|-------------------------------------------------------------------------|
 | **Datengeber**            | Name des Ausgabeordners (Standard: Zeitstempel)                         |
 | **Ausgabeordner**         | Zielverzeichnis; über den Ordner-Button kann ein Dialog geöffnet werden |
-| **Dateien pro Ordner**    | Anzahl der Dateien pro Unterordner (Standard: 10.000)                   |
 | **Set(s)**                | Ein oder mehrere Sets (Mehrfachauswahl möglich)                         |
 | **Von-Datum / Bis-Datum** | ISO8601-Zeitraum (YYYY-MM-DD); über das Kalender-Icon auswählbar        |
 | **Parallele Downloads**   | Anzahl gleichzeitiger `GetRecord`-Anfragen (Standard: 4)                |
 | **Timeout (s)**           | Wartezeit zwischen Anfragen in Sekunden (Standard: 0)                   |
 | **Exportformat**          | `xml` oder `json`                                                       |
+| **Gelöschte Records**     | `keep` (Standard), `skip` oder `folder` – siehe [Gelöschte Records](#gelöschte-records) |
+| **Gentle Mode**           | Schalter für empfindliche Schnittstellen – siehe [Gentle Mode](#gentle-mode) |
+| **Rate Limit (s)**        | Mindestabstand zwischen Requests in Sekunden (0 = kein Limit)           |
 
 ### Harvesting starten
 
@@ -138,7 +140,7 @@ Der Aufruf von Ometha kennt vier _"positional arguments"_, die die  Modi untersc
 Ein Kommandozeilenaufruf sieht dann bspw. so aus:
 
 ```shell
-uv run ometha default -b https://oai.schnittstelle.de -m metadataprefix -d ordnername -s set1 set2 -o /home/harvesting/
+ometha default -b https://oai.schnittstelle.de -m metadataprefix -d ordnername -s set1 set2 -o /home/harvesting/
 ```
 
 Optionale Parameter:
@@ -151,16 +153,18 @@ Optionale Parameter:
 - `-u/--untildate`: Harvesting von OAI-Records bis zu diesem Zeitpunkt. Gleiche Formate wie `-f`
 - `--resumptiontoken`: ResumptionToken, falls das Identifier-Harvesting abgebrochen war ([keine Kurzform!](#errorhandling-abbruch-beim-harvesten-der-oai-identifier))
 - `-p/--parallel`: Parallele Downloads via `GetRecord` (Standard: automatisch basierend auf ID-Anzahl, max. 100)
-- `--batchsize`: Anzahl der Dateien pro Unterordner
 - `-e/--exporttype`: Exportformat `xml` (Standard) oder `json`
 - `--debug`: Debugging aktivieren (verboser Output)
+- `--gentle`: Aktiviert den Gentle Mode für empfindliche Schnittstellen (siehe [Gentle Mode](#gentle-mode))
+- `--ratelimit`: Mindestabstand zwischen Requests in Sekunden (unabhängig von `--gentle` nutzbar)
+- `--deleted`: Umgang mit gelöschten Records: `keep` (Standard), `skip` oder `folder` (siehe [Gelöschte Records](#gelöschte-records))
 
 ## Harvesten mit Konfigurationsdateien (`config`)
 
-Ometha unterstützt Harvesting über Konfigurationsdateien. So können Harvestingvorgänge komplett automatisiert werden und auch per cronjob o.ä. aufgerufen werden. Beim Aufruf mit dem _positional_ Argument `conf` und dem Argument `-c` mit dem Pfad zu einer entsprechenden Konfigurationsdatei (`ometha conf -c /pfad/zur/konfigurationsdatei.yaml`) werden alle Parameter aus einer YAML Datei gelesen:
+Ometha unterstützt Harvesting über Konfigurationsdateien. So können Harvestingvorgänge komplett automatisiert werden und auch per cronjob o. ä. aufgerufen werden. Beim Aufruf mit dem _positional_ Argument `conf` und dem Argument `-c` mit dem Pfad zu einer entsprechenden Konfigurationsdatei (`ometha conf -c /pfad/zur/konfigurationsdatei.yaml`) werden alle Parameter aus einer YAML Datei gelesen:
 
 ```shell
-uv run ometha conf -c saarland.yaml
+ometha conf -c saarland.yaml
 ```
 
 Mit dem optionalen Parameter `-a` bzw. `--auto` wird der **Automatikmodus** aktiviert: Beim Start wird `until-Datum` auf den aktuellen Zeitpunkt gesetzt, nach erfolgreichem Harvesting wird `from-Datum` aktualisiert. Beim nächsten Lauf ist damit automatisch der Zeitraum seit dem letzten Harvesting eingestellt. Ometha verwendet dabei das vollständige Datetime-Format (`YYYY-MM-DDThh:mm:ssZ`), sofern die Schnittstelle das unterstützt.
@@ -186,8 +190,6 @@ untildate: null
 timeout: 0
 outputfolder: null
 debug: false
-batchsize: 8000
-maxtimeout: 120
 # Anzahl paralleler Downloads (optional, default: automatisch basierend auf ID-Anzahl):
 # numberofprocesses: 8
 ```
@@ -290,11 +292,11 @@ optional arguments:
 Für den Fall, dass eine bereits mit Ometha erstellte ID-Liste erneut geharvestet werden soll:
 
 ```shell
-uv run ometha ids -i _ometha_successful_ids.yaml
+ometha ids -i _ometha_successful_ids.yaml
 ```
 
 ```shell
-usage: uv run ometha ids [-h] --idfile IDFILE [--datengeber DATENGEBER]
+usage: ometha ids [-h] --idfile IDFILE [--datengeber DATENGEBER]
                   [--parallel PARALLEL] [--timeout TIMEOUT]
                   [--outputfolder OUTPUTFOLDER] [--exporttype EXPORTTYPE] [--debug]
 
@@ -316,10 +318,77 @@ Während des ID-Harvestings speichert Ometha automatisch alle 1000 IDs einen Che
 Falls beim Harvesten der OAI-IDs etwas schief geht, reicht es, sich den letzten angezeigten Resumption-Token zu notieren (bzw. in der Checkpoint-Datei oder Log-Datei zu schauen) und Ometha dann mit dem zusätzlichen Parameter `--resumptiontoken=resumptiontoken` auszuführen bzw. beim interaktiven Modus die Option `[R]` zu wählen:
 
 ```shell
-uv run ometha default -b https://oai.schnittstelle.de -m metadataprefix -d ordnername --resumptiontoken=nEk0tn0itpmuser
+ometha default -b https://oai.schnittstelle.de -m metadataprefix -d ordnername --resumptiontoken=nEk0tn0itpmuser
 ```
 
 (Hier ist darauf zu achten, dass man immer `--resumptiontoken=` nutzt, da es durchaus ResumptionTokens gibt, die mit einem Bindestrich anfangen und somit im Kommandozeilenmodus als neuer Parameter verstanden würden, wenn man `--resumptiontoken -1dsada-2wdss` eingeben würde. Die verkürzte Option `-r` ist daher auch deaktiviert.)
+
+## Gentle Mode
+
+Für empfindliche OAI-Schnittstellen, die bei zu vielen parallelen Anfragen mit Fehlern oder Sperren reagieren, bietet Ometha einen Gentle Mode mit konservativen Defaults:
+
+| Parameter           | Normal       | Gentle Mode |
+|---------------------|--------------|-------------|
+| Parallele Downloads | automatisch  | 1           |
+| Timeout             | 20 s         | 30 s        |
+| Rate Limit          | keins        | 20 s        |
+
+```shell
+ometha default -b https://oai.schnittstelle.de -m metadataprefix --gentle
+```
+
+Alle drei Werte lassen sich im Gentle Mode noch überschreiben:
+
+```shell
+# Gentle Mode, aber mit 5s Rate Limit statt 20s
+ometha default -b https://oai.schnittstelle.de -m metadataprefix --gentle --ratelimit 5
+
+# Gentle Mode, aber mit 2 parallelen Downloads
+ometha default -b https://oai.schnittstelle.de -m metadataprefix --gentle -p 2
+```
+
+Das Rate Limit (`--ratelimit`) ist auch unabhängig vom Gentle Mode nutzbar:
+
+```shell
+# 3 parallele Downloads, aber mindestens 10s zwischen den Requests
+ometha default -b https://oai.schnittstelle.de -m metadataprefix -p 3 --ratelimit 10
+```
+
+Das Rate Limit wird global über alle Worker-Threads hinweg erzwungen – unabhängig von der Anzahl paralleler Downloads kommt also immer nur ein Request pro Intervall durch.
+
+In der YAML-Konfigurationsdatei:
+
+```yaml
+ratelimit: 10
+```
+
+## Gelöschte Records
+
+OAI-PMH kennzeichnet gelöschte Datensätze mit `status="deleted"` im Record-Header. Ometha bietet drei Optionen für den Umgang damit:
+
+| Wert     | Verhalten                                                            |
+|----------|----------------------------------------------------------------------|
+| `keep`   | Gelöschte Records werden normal gespeichert (Standard)               |
+| `skip`   | Gelöschte Records werden verworfen und nur geloggt                   |
+| `folder` | Gelöschte Records werden in einen `_deleted/`-Unterordner verschoben |
+
+```shell
+# Gelöschte Records überspringen
+ometha default -b https://oai.schnittstelle.de -m metadataprefix --deleted skip
+
+# Gelöschte Records in _deleted/ verschieben
+ometha default -b https://oai.schnittstelle.de -m metadataprefix --deleted folder
+```
+
+In der YAML-Konfigurationsdatei:
+
+```yaml
+deleted: skip
+```
+
+Am Ende jedes Harvesting-Laufs gibt Ometha eine Zusammenfassung der übersprungenen bzw. verschobenen gelöschten Records aus.
+
+Records ohne auswertbaren Metadaten-Inhalt (kein Element unterhalb von `//metadata/*`) werden unabhängig von der `--deleted`-Einstellung automatisch in einen `_invalid/`-Unterordner verschoben und geloggt.
 
 # Konfigurationsdatei
 

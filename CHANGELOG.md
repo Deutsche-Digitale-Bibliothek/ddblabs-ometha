@@ -19,9 +19,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   as a warning. This check runs after the deleted-record check, so deleted records
   are never misclassified as invalid. A summary count is printed at the end of
   each harvesting run.
+- New `--gentle` flag (CLI/TUI) and toggle (GUI) for sensitive OAI endpoints:
+  sets conservative defaults of 1 thread, 30s timeout, and 20s rate limit.
+  All three values remain individually overridable via `--parallel`, `--timeout`,
+  and `--ratelimit`
+- New `--ratelimit` parameter (seconds between requests) usable independently
+  of `--gentle`; enforced globally across all worker threads via a shared lock,
+  so the interval is respected regardless of parallelization level
 
 ### Changed
 - `harvest_files` logs a summary of skipped/moved deleted records at the end of each run
+- TUI: gentle mode is now prompted before parallel downloads, preventing users
+  from entering a thread count that would immediately be overridden by the
+  gentle mode default
 
 ### Fixed
 - `test_oai_mock`: `harvest_files` tests now use the mocked session instead of a bare `requests.Session()`, fixing tests that silently produced no output
