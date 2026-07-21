@@ -121,6 +121,16 @@ def index():
                 timeout = ui.number("Timeout (s)", value=0, min=0).classes("flex-1")
                 batch_size = ui.number("Dateien pro Unterordner", value=10000, min=1).classes("flex-1")
             exp_type = ui.select(["xml", "json"], value="xml", label="Exportformat").classes("w-full")
+            deleted_handling = ui.select(
+                ["keep", "skip", "folder"],
+                value="keep",
+                label="Gelöschte Records (keep = mitspeichern, skip = verwerfen, folder = _deleted/)",
+            ).classes("w-full")
+            with ui.row().classes("w-full gap-4 items-center"):
+                gentle = ui.switch("Gentle Mode (empfindliche Schnittstellen)").classes("flex-1")
+                ratelimit = ui.number("Rate Limit (s)", value=0, min=0).classes("flex-1").tooltip(
+                    "Mindestabstand zwischen Requests in Sekunden. 0 = kein Limit."
+                )
 
         # Fehleranzeige
         error_banner = ui.label("").classes("text-red-600 font-medium hidden")
@@ -237,6 +247,9 @@ def index():
             "timeout": float(timeout.value or 0),
             "batch_size": int(batch_size.value or 10000),
             "exp_type": exp_type.value,
+            "deleted_handling": deleted_handling.value,
+            "gentle": gentle.value,
+            "ratelimit": float(ratelimit.value) if ratelimit.value else None,
             "debug": False,
             "res_tok": None,
             "id_f": None,
@@ -245,6 +258,16 @@ def index():
             "auto_m": False,
             "mode": "cli",
         }
+
+        # Gentle Mode: Defaults setzen falls nicht explizit überschrieben
+        from .helpers import GENTLE_DEFAULTS
+        if prm["gentle"]:
+            if not prm["n_procs"] or prm["n_procs"] == 16:
+                prm["n_procs"] = GENTLE_DEFAULTS["n_procs"]
+            if not prm["timeout"]:
+                prm["timeout"] = GENTLE_DEFAULTS["timeout"]
+            if not prm["ratelimit"]:
+                prm["ratelimit"] = GENTLE_DEFAULTS["ratelimit"]
 
         # Ausgabeordner anlegen
         safe_timestr = TIMESTR.replace(":", "_")
@@ -259,7 +282,6 @@ def index():
 
         try:
             # Phase 1: Identifier sammeln
-            # Basis-URL ohne Set-Parameter
             base_harvest_url = f"{prm['b_url']}?verb=ListIdentifiers&metadataPrefix={prm['pref']}"
             if prm["f_date"]:
                 base_harvest_url += f"&from={prm['f_date']}"
@@ -271,7 +293,6 @@ def index():
             def on_list_size(n: int):
                 log(f"Angegebene ListSize: {n}")
 
-            # Für jedes Set einen eigenen get_identifier-Lauf, ohne Sets alle IDs
             if additive_sets:
                 ids = []
                 for set_spec in additive_sets:
@@ -280,7 +301,7 @@ def index():
                     set_ids = await run.io_bound(get_identifier, prm, set_url, session, on_list_size)
                     log(f"  {len(set_ids)} Identifier in Set '{set_spec}'.")
                     ids.extend(set_ids)
-                ids = list(dict.fromkeys(ids))  # Duplikate entfernen, Reihenfolge behalten
+                ids = list(dict.fromkeys(ids))
             else:
                 log("Sammle Identifier …")
                 ids = await run.io_bound(get_identifier, prm, base_harvest_url, session, on_list_size)

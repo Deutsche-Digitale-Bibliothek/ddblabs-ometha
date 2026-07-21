@@ -282,17 +282,16 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
             return False
 
     def is_invalid(response_text: str) -> bool:
-        """Return True if the record has no grandchild node under //metadata.
-
-        A valid record must have at least one element two levels below <metadata>
-        (e.g. <oai_dc:dc><dc:title>…</dc:title></oai_dc:dc>). Records without
-        this structure are considered invalid (empty metadata, HTML fragments, etc.).
-        """
+        """Return True if the record has no grandchild node under //metadata."""
         try:
             root = etree.fromstring(response_text.encode())
             return not root.findall(f".//{NAMESPACE}metadata/*/*")
         except Exception:
-            return True  # unparseable XML → treat as invalid
+            return True
+
+    # Rate-Limit-Zustand (geteilt über alle Worker)
+    _rate_limit_lock = threading.Lock()
+    _last_request_time = [0.0]
 
     if ids:
         print_and_log(f"{SEP_LINE}Harveste {len(ids)} IDs.", logger, "info")
@@ -411,6 +410,14 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
             target_folder = get_subfolder(folder, index)
             oai_id = parse_qs(urlparse(url).query)["identifier"][0]
             export_type = PRM["exp_type"]
+            # Rate Limiting
+            ratelimit = PRM.get("ratelimit")
+            if ratelimit:
+                with _rate_limit_lock:
+                    wait = ratelimit - (time.monotonic() - _last_request_time[0])
+                    if wait > 0:
+                        time.sleep(wait)
+                    _last_request_time[0] = time.monotonic()
             try:
                 with session.get(url, timeout=t) as resp:
                     elapsed = time.monotonic() - t_start

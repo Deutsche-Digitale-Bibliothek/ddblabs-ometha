@@ -36,8 +36,8 @@ def parseargs() -> dict[str, Any]:
             "--timeout",
             "-t",
             type=int,
-            help="Timeout between requests in seconds (default: 20)",
-            default=20,
+            help="Timeout between requests in seconds (default: 20, or 30 in --gentle mode)",
+            default=None,
         )
         s.add_argument(
             "--maxtimeout",
@@ -62,6 +62,20 @@ def parseargs() -> dict[str, Any]:
         )
         s.add_argument("--exporttype", "-e", help="Export format (xml/json)", default="xml")
         s.add_argument(
+            "--gentle",
+            dest="gentle",
+            action="store_true",
+            default=False,
+            help="Conservative mode for sensitive endpoints: 1 thread, 30s timeout, 20s rate limit (all overridable)",
+        )
+        s.add_argument(
+            "--ratelimit",
+            type=float,
+            default=None,
+            dest="ratelimit",
+            help="Minimum seconds between requests (default: none)",
+        )
+        s.add_argument(
             "--deleted",
             dest="deleted_handling",
             choices=["keep", "skip", "folder"],
@@ -70,15 +84,23 @@ def parseargs() -> dict[str, Any]:
         )
 
     def convert_common_args(args):
-        PRM["timeout"], PRM["n_procs"], PRM["out_f"], PRM["debug"], PRM["exp_type"], PRM["max_timeout"], PRM["batch_size"], PRM["deleted_handling"] = (
-            args.timeout,
-            args.parallel,
+        from .helpers import GENTLE_DEFAULTS
+        PRM["gentle"] = args.gentle
+        PRM["deleted_handling"] = args.deleted_handling
+        if args.gentle:
+            PRM["n_procs"]   = args.parallel  if args.parallel  is not None else GENTLE_DEFAULTS["n_procs"]
+            PRM["timeout"]   = args.timeout   if args.timeout   is not None else GENTLE_DEFAULTS["timeout"]
+            PRM["ratelimit"] = args.ratelimit if args.ratelimit is not None else GENTLE_DEFAULTS["ratelimit"]
+        else:
+            PRM["n_procs"]   = args.parallel
+            PRM["timeout"]   = args.timeout if args.timeout is not None else 20
+            PRM["ratelimit"] = args.ratelimit
+        PRM["out_f"], PRM["debug"], PRM["exp_type"], PRM["max_timeout"], PRM["batch_size"] = (
             args.outputfolder,
             args.debug,
             args.exporttype,
             args.max_timeout,
             args.batch_size,
-            args.deleted_handling,
         )
 
     subparsers = {
@@ -249,6 +271,8 @@ def parseargs() -> dict[str, Any]:
         PRM["max_timeout"] = read_yaml_file(PRM["conf_f"], ["maxtimeout"])[0]
         # deleted_handling: read from config file, default "keep"
         PRM["deleted_handling"] = read_yaml_file(PRM["conf_f"], ["deleted"])[0] or "keep"
+        # ratelimit: read from config file
+        PRM["ratelimit"] = read_yaml_file(PRM["conf_f"], ["ratelimit"])[0]
         # resumptiontoken: gesetzt wenn Checkpoint-YAML verwendet wird
         PRM["res_tok"] = read_yaml_file(PRM["conf_f"], ["resumptiontoken"])[0]
         # Clean up base URL and prefix if they are not None
