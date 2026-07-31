@@ -5,7 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 ---
-## [2.3.0] - 2026-XX-XX
+## [2.3.0] - 2026-07-31
 
 ### Added
 - New parameter `--deleted` (CLI) / `deleted` (YAML config) to control how records
