@@ -20,7 +20,7 @@ import requests
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from oai_mock import OAIMock, OAIRecord
-from ometha.harvester import get_identifier
+from ometha.harvester import get_identifier, get_identifier_pages
 from ometha.helpers import isinvalid_xml_content, NAMESPACE
 
 BASE_URL = "http://mock-oai.test/oai"
@@ -1492,3 +1492,145 @@ class TestRateLimiting:
         elapsed = time.monotonic() - t_start
 
         assert elapsed < 2.0, f"Expected fast run, got {elapsed:.2f}s"
+
+
+# ---------------------------------------------------------------------------
+# get_identifier_pages Generator
+# ---------------------------------------------------------------------------
+
+
+class TestGetIdentifierPages:
+    """Testet den get_identifier_pages-Generator direkt."""
+
+    def test_yields_lists(self, requests_mock, session, prm_base):
+        """get_identifier_pages muss Listen yielden, keine einzelnen Strings."""
+        mock = OAIMock.with_dc_records(5)
+        mock.register(requests_mock)
+        url = f"{mock.base_url}?verb=ListIdentifiers&metadataPrefix=oai_dc"
+
+        pages = list(get_identifier_pages(prm_base, url, session))
+        assert len(pages) >= 1
+        assert all(isinstance(page, list) for page in pages)
+
+    def test_all_ids_collected_across_pages(self, requests_mock, session, prm_base):
+        """Alle IDs aus allen Seiten müssen erreichbar sein."""
+        mock = OAIMock.with_dc_records(9, page_size=4)
+        mock.register(requests_mock)
+        url = f"{mock.base_url}?verb=ListIdentifiers&metadataPrefix=oai_dc"
+
+        all_ids = [id for page in get_identifier_pages(prm_base, url, session) for id in page]
+        assert len(all_ids) == 9
+
+    def test_multiple_pages_yielded(self, requests_mock, session, prm_base):
+        """Mit page_size=3 und 9 Records müssen 3 Seiten geliefert werden."""
+        mock = OAIMock.with_dc_records(9, page_size=3)
+        mock.register(requests_mock)
+        url = f"{mock.base_url}?verb=ListIdentifiers&metadataPrefix=oai_dc"
+
+        pages = list(get_identifier_pages(prm_base, url, session))
+        assert len(pages) == 3
+
+    def test_first_page_available_immediately(self, requests_mock, session, prm_base):
+        """Der Generator muss nach der ersten Seite yielden, nicht erst am Ende."""
+        mock = OAIMock.with_dc_records(9, page_size=3)
+        mock.register(requests_mock)
+        url = f"{mock.base_url}?verb=ListIdentifiers&metadataPrefix=oai_dc"
+
+        gen = get_identifier_pages(prm_base, url, session)
+        first_page = next(gen)
+        assert isinstance(first_page, list)
+        assert len(first_page) == 3  # erste Seite sofort verfügbar
+
+    def test_get_identifier_wrapper_returns_flat_list(self, requests_mock, session, prm_base):
+        """get_identifier (Wrapper) muss weiterhin eine flache Liste zurückgeben."""
+        mock = OAIMock.with_dc_records(9, page_size=3)
+        mock.register(requests_mock)
+        url = f"{mock.base_url}?verb=ListIdentifiers&metadataPrefix=oai_dc"
+
+        ids = get_identifier(prm_base, url, session)
+        assert isinstance(ids, list)
+        assert len(ids) == 9
+        assert all(isinstance(i, str) for i in ids)
+
+
+# ---------------------------------------------------------------------------
+# harvest_files mit Generator (Pipelining)
+# ---------------------------------------------------------------------------
+
+
+class TestHarvestFilesPipelining:
+    """Prüft dass harvest_files korrekt mit einem Generator als ids-Parameter arbeitet."""
+
+    def test_harvest_from_generator(self, requests_mock, prm_base, tmp_path, session):
+        """harvest_files muss auch einen Generator akzeptieren und verarbeiten."""
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord(f"oai:mock:pipe{i:03d}") for i in range(5)]
+        mock = OAIMock(records=records)
+        mock.register(requests_mock)
+
+        prm = {**prm_base, "out_f": str(tmp_path)}
+
+        # Generator statt Liste übergeben
+        def id_generator():
+            yield [r.identifier for r in records[:3]]
+            yield [r.identifier for r in records[3:]]
+
+        failed_dl, failed_ids = harvest_files(id_generator(), prm, str(tmp_path), session=session)
+
+        assert len(list(tmp_path.rglob("*.xml"))) == 5
+        assert failed_dl == []
+        assert failed_ids == []
+
+    def test_pipeline_from_get_identifier_pages(self, requests_mock, prm_base, tmp_path, session):
+        """Vollständiger Pipeline-Durchlauf: get_identifier_pages → harvest_files."""
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord(f"oai:mock:full{i:03d}") for i in range(6)]
+        mock = OAIMock(records=records, page_size=3)
+        mock.register(requests_mock)
+
+        prm = {**prm_base, "out_f": str(tmp_path)}
+        list_url = f"{mock.base_url}?verb=ListIdentifiers&metadataPrefix=oai_dc"
+
+        # get_identifier_pages direkt an harvest_files übergeben
+        pages = get_identifier_pages(prm, list_url, session)
+        failed_dl, failed_ids = harvest_files(pages, prm, str(tmp_path), session=session)
+
+        assert len(list(tmp_path.rglob("*.xml"))) == 6
+        assert failed_dl == []
+
+    def test_list_still_works(self, requests_mock, prm_base, tmp_path, session):
+        """harvest_files muss weiterhin Listen akzeptieren (Rückwärtskompatibilität)."""
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord(f"oai:mock:list{i:03d}") for i in range(3)]
+        OAIMock(records=records).register(requests_mock)
+
+        prm = {**prm_base, "out_f": str(tmp_path)}
+        ids = [r.identifier for r in records]
+        failed_dl, failed_ids = harvest_files(ids, prm, str(tmp_path), session=session)
+
+        assert len(list(tmp_path.rglob("*.xml"))) == 3
+        assert failed_dl == []
+
+    def test_producer_sentinel_set_on_empty_generator(self, requests_mock, prm_base, tmp_path, session):
+        """Auch bei leerem Generator hängt harvest_files nicht."""
+        from ometha.harvester import harvest_files
+        import threading
+
+        OAIMock(records=[]).register(requests_mock)
+        prm = {**prm_base, "out_f": str(tmp_path)}
+
+        def empty_gen():
+            return
+            yield  # macht es zu einem Generator
+
+        result = [None]
+        def run():
+            result[0] = harvest_files(empty_gen(), prm, str(tmp_path), session=session)
+
+        t = threading.Thread(target=run)
+        t.start()
+        t.join(timeout=10)
+        assert not t.is_alive(), "harvest_files hat sich aufgehängt bei leerem Generator"

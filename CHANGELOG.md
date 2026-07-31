@@ -32,6 +32,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - TUI: gentle mode is now prompted before parallel downloads, preventing users
   from entering a thread count that would immediately be overridden by the
   gentle mode default
+- Harvesting now uses a producer-consumer pipeline: `GetRecord` downloads start
+  after the first `ListIdentifiers` page instead of waiting for all identifiers
+  to be collected first, significantly reducing time-to-first-download on large
+  repositories
+- `get_identifier` is now a thin wrapper around the new `get_identifier_pages`
+  generator, which yields one page of identifiers at a time; existing callers
+  (GUI, ID-file mode) are unaffected
+- Intersection sets still collect all identifiers upfront (required for the
+  cross-set deduplication), multiple additive sets collect and deduplicate
+  before harvesting; single set and no-set cases benefit fully from pipelining
 
 ### Fixed
 - `test_oai_mock`: `harvest_files` tests now use the mocked session instead of a bare `requests.Session()`, fixing tests that silently produced no output
