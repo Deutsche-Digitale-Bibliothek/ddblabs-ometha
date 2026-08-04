@@ -44,7 +44,7 @@ def interactiveMode(session: Session) -> dict[str, Any]:
 
     def get_folder_input(prompt, default_folder):
         folder_input = input(prompt).strip()
-        return folder_input if folder_input else default_folder
+        return os.path.expanduser(folder_input) if folder_input else default_folder
 
     def is_valid_url(url):
         return bool(re.search(r"https?://\S+", url))

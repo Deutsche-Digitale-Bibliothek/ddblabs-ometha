@@ -356,6 +356,22 @@ class TestDefaultCommand:
         assert prm["gentle"] is False
         assert prm["n_procs"] is None   # kein Gentle → keine Änderung
 
+    def test_outputfolder_tilde_expanded(self):
+        """Regression: ~ im Ausgabepfad wurde nicht expandiert (literaler ~-Ordner)."""
+        import os
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-o", "~/harvest"])
+        assert prm["out_f"] != "~/harvest"
+        assert prm["out_f"] == os.path.expanduser("~/harvest")
+        assert "~" not in prm["out_f"]
+
+    def test_outputfolder_tilde_only_expanded(self):
+        """Regression: ~ allein als Pfad wurde nicht expandiert."""
+        import os
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-o", "~"])
+        assert prm["out_f"] != "~"
+        assert prm["out_f"] == os.path.expanduser("~")
+        assert "~" not in prm["out_f"]
+
     def test_ratelimit_default_is_none(self):
         prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc"])
         assert prm["ratelimit"] is None
@@ -770,6 +786,13 @@ class TestConfCommand:
         data = {**YAML_CONF_MINIMAL, "batchsize": 500}
         prm = self._parse_conf(yaml_data=data)
         assert prm["batch_size"] == 500
+
+    def test_outputfolder_tilde_expanded_from_yaml(self):
+        """Regression: ~ im outputfolder aus YAML wurde nicht expandiert."""
+        data = {**YAML_CONF_MINIMAL, "outputfolder": "~/harvest"}
+        prm = self._parse_conf(yaml_data=data)
+        assert prm["out_f"] != "~/harvest"
+        assert "~" not in prm["out_f"]
 
     def test_deleted_handling_default_keep_wenn_nicht_in_yaml(self):
         prm = self._parse_conf()

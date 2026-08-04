@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 ---
+## [2.4.0] - 2026-XX-XX
+
+### Fixed
+- Output folder paths starting with `~` are now correctly expanded to the
+  user's home directory instead of creating a literal `~` subfolder
+
 ## [2.3.0] - 2026-07-31
 
 ### Added
