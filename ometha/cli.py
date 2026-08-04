@@ -95,8 +95,8 @@ def parseargs() -> dict[str, Any]:
             PRM["n_procs"]   = args.parallel
             PRM["timeout"]   = args.timeout if args.timeout is not None else 20
             PRM["ratelimit"] = args.ratelimit
-        PRM["out_f"], PRM["debug"], PRM["exp_type"], PRM["max_timeout"], PRM["batch_size"] = (
-            args.outputfolder,
+        PRM["out_f"] = os.path.expanduser(args.outputfolder) if args.outputfolder else args.outputfolder
+        PRM["debug"], PRM["exp_type"], PRM["max_timeout"], PRM["batch_size"] = (
             args.debug,
             args.exporttype,
             args.max_timeout,
@@ -262,7 +262,7 @@ def parseargs() -> dict[str, Any]:
             PRM["dat_geb"] = read_yaml_file(PRM["conf_f"], ["name"])[0]
 
         # outputfolder: if none is defined use the current working directory
-        PRM["out_f"] = read_yaml_file(PRM["conf_f"], ["outputfolder"], os.getcwd())[0] or os.getcwd()
+        PRM["out_f"] = os.path.expanduser(read_yaml_file(PRM["conf_f"], ["outputfolder"], os.getcwd())[0] or os.getcwd())
         # n_procs: read from config file, None means auto-scale based on ID count
         PRM["n_procs"] = read_yaml_file(PRM["conf_f"], ["numberofprocesses"])[0]
         # batch_size: read from config file, None means default (10000)
