@@ -101,6 +101,14 @@ def generate_id_harvesting_url(PRM: dict, set: str, session: requests.Session) -
     return get_identifier_pages(PRM, url, session)
 
 
+def collect_ids(PRM: dict, set: str | None, session: requests.Session):
+    """Sammelt IDs für ein Set. Im Gentle Mode wird vollständig eingesammelt
+    (kein Pipelining), sonst wird der Generator zum Pipelining durchgereicht."""
+    if PRM["gentle"]:
+        return [id for page in generate_id_harvesting_url(PRM, set, session) for id in page]
+    return generate_id_harvesting_url(PRM, set, session)
+
+
 def start_process() -> None:
     """Initialize and run the full Ometha harvesting pipeline.
 
@@ -281,19 +289,31 @@ def start_process() -> None:
                 create_id_file(PRM, ids, folder, type="successful")
                 PRM["n_procs"] = min(int(2 * len(ids) / 300 + 4), 16) if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
             elif len(a_sets) == 1:
-                ids = generate_id_harvesting_url(PRM, a_sets[0], session)
-                PRM["n_procs"] = 16 if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
+                ids = collect_ids(PRM, a_sets[0], session)
+                if PRM["gentle"]:
+                    create_id_file(PRM, ids, folder, type="successful")
+                    PRM["n_procs"] = min(int(2 * len(ids) / 300 + 4), 16) if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
+                else:
+                    PRM["n_procs"] = 16 if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
             elif a_sets:
                 ids = [id for a_set in a_sets for page in generate_id_harvesting_url(PRM, a_set, session) for id in page]
                 ids = list(dict.fromkeys(ids))
                 create_id_file(PRM, ids, folder, type="successful")
                 PRM["n_procs"] = min(int(2 * len(ids) / 300 + 4), 16) if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
             else:
-                ids = generate_id_harvesting_url(PRM, set=None, session=session)
-                PRM["n_procs"] = 16 if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
+                ids = collect_ids(PRM, None, session)
+                if PRM["gentle"]:
+                    create_id_file(PRM, ids, folder, type="successful")
+                    PRM["n_procs"] = min(int(2 * len(ids) / 300 + 4), 16) if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
+                else:
+                    PRM["n_procs"] = 16 if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
         else:
-            ids = generate_id_harvesting_url(PRM, set=None, session=session)
-            PRM["n_procs"] = 16 if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
+            ids = collect_ids(PRM, None, session)
+            if PRM["gentle"]:
+                create_id_file(PRM, ids, folder, type="successful")
+                PRM["n_procs"] = min(int(2 * len(ids) / 300 + 4), 16) if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
+            else:
+                PRM["n_procs"] = 16 if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
     # Dateiharvesting beginnen
     logger.info(f"Anzahl der parallelen Downloads auf {PRM['n_procs']} gesetzt (auf Basis der Anzahl an IDs).")
     print(f"{Style.DIM} Timeout auf {PRM['timeout']} s gesetzt. {Style.RESET_ALL}\n{SEP_LINE}") if PRM[

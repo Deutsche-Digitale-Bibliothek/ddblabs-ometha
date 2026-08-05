@@ -7,13 +7,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ---
 ## [2.4.0] - 2026-XX-XX
 
+### Added
+
+- Added docstrings to the fixtures for the `TUI mode` unit tests.
+- Provide first unit tests for `main.py`.
+
+### Changed
+- `--gentle` now also disables identifier pipelining: all identifiers are
+  collected upfront (and written to the ID file) before downloads start,
+  instead of streaming identifiers into the worker pool as they arrive.
+  This avoids running ListIdentifiers and GetRecord requests concurrently
+  against endpoints that are already being treated conservatively
+- Refactored `collect_ids()` out of `start_process()` into a standalone,
+  testable function
+
 ### Fixed
 - Output folder paths starting with `~` are now correctly expanded to the
   user's home directory instead of creating a literal `~` subfolder
 - Ometha crashed with `TypeError: divmod expected 2 arguments, got 3` after
   completing a harvesting run; runtime is now calculated correctly using two
   nested `divmod` calls
-- Added docstrings to the fixtures for the TUI mode unit tests.
 
 ## [2.3.0] - 2026-07-31
 
