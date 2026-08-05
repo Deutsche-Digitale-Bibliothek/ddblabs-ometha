@@ -29,6 +29,7 @@ from ometha.tui import interactiveMode
 
 
 def reset_prm():
+    """Setzt alle PRM-Werte auf None zurück, um Seiteneffekte zwischen Tests zu vermeiden."""
     import ometha.helpers as h
 
     for key in h.PRM:
@@ -37,6 +38,7 @@ def reset_prm():
 
 @pytest.fixture(autouse=True)
 def clean_prm():
+    """Stellt sicher dass PRM vor und nach jedem Test sauber zurückgesetzt wird."""
     reset_prm()
     yield
     reset_prm()
@@ -44,6 +46,7 @@ def clean_prm():
 
 @pytest.fixture
 def session():
+    """Gibt eine frische requests.Session zurück."""
     return requests.Session()
 
 
