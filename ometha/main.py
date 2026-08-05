@@ -192,7 +192,7 @@ def start_process() -> None:
 
     # bei Configmode & Automode das until-Datum setzen bevor es geloggt wird
     if PRM["conf_m"] and PRM["auto_m"]:
-        change_date(OAITIMESTR, PRM["conf_f"], key="until-Datum")
+        change_date(OAITIMESTR, PRM["conf_f"], key="untildate")
         PRM["u_date"] = OAITIMESTR
 
     # Logfile anlegen
@@ -265,43 +265,36 @@ def start_process() -> None:
     start_time = timeit.default_timer()
 
     if PRM["id_f"] is not None:
-        # read ids from file
         print(f"{INFO} IDs werden aus {PRM['id_f']} gelesen.")
         ids = read_yaml_file(PRM["id_f"], ["ids"])[0]
         create_id_file(PRM, ids, folder, type="successful")
         PRM["n_procs"] = min(int(2 * len(ids) / 300 + 4), 16) if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
     else:
-        # get ids from url
         if PRM["sets"]:
             sets_dict = PRM["sets"][0] if PRM["sets"] else {"additive": [], "intersection": []}
             a_sets = sets_dict.get("additive", [])
             i_sets = sets_dict.get("intersection", [])
-
             if i_sets:
-                # Intersection requires full lists upfront – collect first, then pipeline
                 a_ids = [id for a_set in a_sets for page in generate_id_harvesting_url(PRM, a_set, session) for id in page]
                 i_ids = [id for i_set in i_sets for page in generate_id_harvesting_url(PRM, i_set, session) for id in page]
                 ids = list(set(i_ids) & set(a_ids)) if i_ids else a_ids
                 create_id_file(PRM, ids, folder, type="successful")
                 PRM["n_procs"] = min(int(2 * len(ids) / 300 + 4), 16) if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
             elif len(a_sets) == 1:
-                # Single additive set: full pipelining
                 ids = generate_id_harvesting_url(PRM, a_sets[0], session)
                 PRM["n_procs"] = 16 if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
             elif a_sets:
-                # Multiple additive sets: collect all first (cross-set dedup possible)
                 ids = [id for a_set in a_sets for page in generate_id_harvesting_url(PRM, a_set, session) for id in page]
                 ids = list(dict.fromkeys(ids))
                 create_id_file(PRM, ids, folder, type="successful")
                 PRM["n_procs"] = min(int(2 * len(ids) / 300 + 4), 16) if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
             else:
-                # No sets: full pipelining
                 ids = generate_id_harvesting_url(PRM, set=None, session=session)
                 PRM["n_procs"] = 16 if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
         else:
-            # No sets: full pipelining
             ids = generate_id_harvesting_url(PRM, set=None, session=session)
             PRM["n_procs"] = 16 if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
+    # Dateiharvesting beginnen
     logger.info(f"Anzahl der parallelen Downloads auf {PRM['n_procs']} gesetzt (auf Basis der Anzahl an IDs).")
     print(f"{Style.DIM} Timeout auf {PRM['timeout']} s gesetzt. {Style.RESET_ALL}\n{SEP_LINE}") if PRM[
         "debug"
@@ -312,7 +305,7 @@ def start_process() -> None:
 
             shutil.rmtree(folder, ignore_errors=True)
         print_and_log(f"{SEP_LINE}Keine IDs gefunden. Programm beendet.", logger, "warning")
-        change_date(OAITIMESTR, PRM["conf_f"], key="from-Datum")
+        change_date(OAITIMESTR, PRM["conf_f"], key="fromdate")
         sys.exit()
     # ---- Start Harvesting ----
     failed_download, failed_ids = harvest_files(ids, PRM, folder, session)
@@ -352,10 +345,13 @@ def start_process() -> None:
             )
 
         # print runtime
-        runtime = "{:02}:{:02}:{:.3f}".format(*divmod(timeit.default_timer() - start_time, 3600, 60))
+        elapsed = timeit.default_timer() - start_time
+        hours, remainder = divmod(elapsed, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        runtime = f"{int(hours):02}:{int(minutes):02}:{seconds:.3f}"
         print_and_log(f"{SEP_LINE}{INFO} Vorgang hat {runtime} gedauert", logger, "info")
 
-    change_date(OAITIMESTR, PRM["conf_f"], key="from-Datum")
+    change_date(OAITIMESTR, PRM["conf_f"], key="fromdate")
 
     if os.name == "nt":
         # Beenden unter Windows

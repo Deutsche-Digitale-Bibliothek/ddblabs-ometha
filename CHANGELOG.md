@@ -10,6 +10,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Fixed
 - Output folder paths starting with `~` are now correctly expanded to the
   user's home directory instead of creating a literal `~` subfolder
+- Ometha crashed with `TypeError: divmod expected 2 arguments, got 3` after
+  completing a harvesting run; runtime is now calculated correctly using two
+  nested `divmod` calls
+- Added docstrings to the fixtures for the TUI mode unit tests.
 
 ## [2.3.0] - 2026-07-31
 
