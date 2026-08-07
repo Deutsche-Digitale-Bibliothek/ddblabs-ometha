@@ -1634,3 +1634,96 @@ class TestHarvestFilesPipelining:
         t.start()
         t.join(timeout=10)
         assert not t.is_alive(), "harvest_files hat sich aufgehängt bei leerem Generator"
+
+
+# ---------------------------------------------------------------------------
+# Regression: log_critical_and_print_and_exit muss immer exiten
+# ---------------------------------------------------------------------------
+
+
+class TestLogCriticalAndPrintAndExit:
+    """Regression: log_critical_and_print_and_exit exitete bei leerem Enter-Druck
+    (input() == "") nicht, weil der Rückgabewert als truthy-Check missbraucht wurde.
+    Das führte in isinvalid_xml_content zu einem UnboundLocalError statt eines
+    sauberen Programmendes."""
+
+    def test_ui_mode_exits_on_empty_input(self):
+        """Leerer Enter-Druck (input() gibt '') muss trotzdem zu sys.exit() führen."""
+        from unittest.mock import patch
+        from ometha.helpers import log_critical_and_print_and_exit
+
+        with patch("builtins.input", return_value=""):
+            with pytest.raises(SystemExit):
+                log_critical_and_print_and_exit("Testfehler", mode="ui")
+
+    def test_ui_mode_exits_on_nonempty_input(self):
+        """Auch mit getipptem Text muss exitet werden (bisheriges Verhalten bleibt)."""
+        from unittest.mock import patch
+        from ometha.helpers import log_critical_and_print_and_exit
+
+        with patch("builtins.input", return_value="x"):
+            with pytest.raises(SystemExit):
+                log_critical_and_print_and_exit("Testfehler", mode="ui")
+
+    def test_cli_mode_exits_without_prompting(self):
+        """Im CLI-Modus darf kein input() aufgerufen werden, aber es muss exitet werden."""
+        from unittest.mock import patch
+        from ometha.helpers import log_critical_and_print_and_exit
+
+        with patch("builtins.input") as mock_input:
+            with pytest.raises(SystemExit):
+                log_critical_and_print_and_exit("Testfehler", mode="cli")
+        mock_input.assert_not_called()
+
+    def test_exits_with_exception_argument(self):
+        """Mit übergebener exception muss ebenfalls exitet werden (unverändertes Verhalten)."""
+        from ometha.helpers import log_critical_and_print_and_exit
+
+        with pytest.raises(SystemExit):
+            log_critical_and_print_and_exit("Testfehler", mode="cli", exception=ValueError("boom"))
+
+
+class TestIsInvalidXmlContentRegression:
+    """Regression: isinvalid_xml_content löste bei ungültigem XML einen
+    UnboundLocalError aus (root war nie zugewiesen), wenn
+    log_critical_and_print_and_exit ausnahmsweise zurückkehrte, statt zu exiten."""
+
+    class _FakeResponse:
+        def __init__(self, content: bytes):
+            self.content = content
+
+    def test_invalid_xml_raises_cleanly_not_unboundlocalerror(self):
+        """Wenn log_critical_and_print_and_exit (z. B. gemockt) zurückkehrt,
+        muss isinvalid_xml_content die ursprüngliche XMLSyntaxError weiterreichen
+        statt eines UnboundLocalError."""
+        from unittest.mock import patch
+        from lxml import etree
+
+        response = self._FakeResponse(b"")  # leerer Body → "Start tag expected"
+
+        with patch("ometha.helpers.log_critical_and_print_and_exit", return_value=None):
+            with pytest.raises(etree.XMLSyntaxError):
+                isinvalid_xml_content(response, "http://example.org/oai", mode="cli")
+
+    def test_valid_xml_returns_root_normally(self):
+        """Gültiges XML muss weiterhin normal geparst werden."""
+        response = self._FakeResponse(b"<root><child/></root>")
+        root = isinvalid_xml_content(response, "http://example.org/oai", mode="cli")
+        assert root.tag == "root"
+
+    def test_invalid_xml_calls_log_critical_with_message(self):
+        """Bei ungültigem XML muss log_critical_and_print_and_exit mit einer
+        aussagekräftigen Fehlermeldung aufgerufen werden."""
+        from unittest.mock import patch
+
+        response = self._FakeResponse(b"nicht xml")
+
+        with patch("ometha.helpers.log_critical_and_print_and_exit") as mock_exit:
+            mock_exit.side_effect = SystemExit(1)
+            with pytest.raises(SystemExit):
+                isinvalid_xml_content(response, "http://example.org/oai", mode="cli")
+
+        assert mock_exit.call_count == 1
+        message = mock_exit.call_args[0][0]
+        assert "XML Syntax Error" in message
+        assert "http://example.org/oai" in message

@@ -753,8 +753,9 @@ class TestOptionS:
                 interactiveMode(session)
         assert exc.value.code == 0
 
-    def test_no_sets_does_not_exit_zero(self, session, requests_mock):
-        """Keine Sets → log_critical_and_print_and_exit (kein sys.exit(0))."""
+    def test_no_sets_exits_cleanly(self, session, requests_mock):
+        """Keine Sets → log_critical_and_print_and_exit beendet das Programm sauber
+        (SystemExit), unabhängig davon was beim 'Drücken Sie Enter'-Prompt eingegeben wird."""
         from tests.oai_mock import OAIMock
 
         mock = OAIMock(
@@ -764,11 +765,11 @@ class TestOptionS:
         mock.register(requests_mock)
 
         # log_critical_and_print_and_exit im ui-Modus ruft einmal input() auf
-        # ("Drücken Sie Enter zum Beenden..."), daher ein extra "" am Ende
+        # ("Drücken Sie Enter zum Beenden..."); leerer Enter-Druck muss trotzdem exiten
         inputs = ["S", "http://oai.example.org/oai", ""]
         with mock_inputs(*inputs):
-            # Das Programm läuft durch (kein sys.exit(0))
-            interactiveMode(session)  # kein Fehler und kein Exit(0)
+            with pytest.raises(SystemExit):
+                interactiveMode(session)
 
     def test_lowercase_s_accepted(self, session, requests_mock):
         from tests.oai_mock import OAIMock
