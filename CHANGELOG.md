@@ -5,7 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 ---
-## [2.4.0] - 2026-XX-XX
+## [2.5.0] - 2026-XX-XX
+
+### Fixed
+- Fixed a crash (`UnboundLocalError`) that occurred when a harvesting run
+  hit an invalid/empty XML response and the user pressed Enter without
+  typing a character at the "Drücken Sie Enter zum Beenden" prompt;
+  `log_critical_and_print_and_exit` now always exits as its name promises,
+  regardless of the exact input given
+
+## [2.4.0] - 2026-08-06
 
 ### Added
 

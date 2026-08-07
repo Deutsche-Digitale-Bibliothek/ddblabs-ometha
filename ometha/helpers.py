@@ -175,8 +175,9 @@ def log_critical_and_print_and_exit(
     if exception:
         logger.exception("Exception details:", exc_info=exception)
         sys.exit()
-    if mode == "ui" and input(f"{message}\nDrücken Sie Enter zum Beenden..."):
-        sys.exit()
+    if mode == "ui":
+        input(f"{message}\nDrücken Sie Enter zum Beenden...")
+    sys.exit()
 
 
 def isinvalid_xml_content(response: Response, url: str, mode: str) -> etree._Element:
@@ -200,4 +201,5 @@ def isinvalid_xml_content(response: Response, url: str, mode: str) -> etree._Ele
             f"XML Syntax Error in the API response, probably no valid XML ({url}): '{e}'",
             mode,
         )
+        raise  # log_critical_and_print_and_exit always exits; this is unreachable but keeps root defined
     return root
