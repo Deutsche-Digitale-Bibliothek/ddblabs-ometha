@@ -13,6 +13,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   typing a character at the "Drücken Sie Enter zum Beenden" prompt;
   `log_critical_and_print_and_exit` now always exits as its name promises,
   regardless of the exact input given
+- The progress bar showed zero movement for the entire identifier-listing
+  phase of a harvest, even though downloads were already running in the
+  background; progress now updates immediately as each download completes
+  via a done-callback, instead of only after all identifiers have been
+  enqueued
+
+## Added
+
+- The progress bar now shows a total/ETA again once `completeListSize` is
+  known from the first `ListIdentifiers` page, even in pipelined mode
 
 ## [2.4.0] - 2026-08-06
 

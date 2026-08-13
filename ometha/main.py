@@ -50,7 +50,9 @@ def assert_status_hook(response, *args, **kwargs):
     response.raise_for_status()
 
 
-def generate_id_harvesting_url(PRM: dict, set: str, session: requests.Session) -> list[str]:
+def generate_id_harvesting_url(
+    PRM: dict, set: str, session: requests.Session, on_list_size=None
+) -> list[str]:
     """Build a ListIdentifiers URL from PRM parameters and return all harvested IDs.
 
     If a resumption token is present in PRM it is used directly; otherwise the URL
@@ -60,6 +62,8 @@ def generate_id_harvesting_url(PRM: dict, set: str, session: requests.Session) -
         PRM: Parameters dictionary with harvesting configuration.
         set: OAI set spec to restrict harvesting, or empty string for no set filter.
         session: HTTP session to use for requests.
+        on_list_size: Optional callback invoked once completeListSize is known,
+            used to feed the progress bar's ETA during pipelining.
 
     Returns:
         A list of all OAI identifier strings found at the endpoint.
@@ -98,15 +102,15 @@ def generate_id_harvesting_url(PRM: dict, set: str, session: requests.Session) -
     if set:
         url = f"{url}&set={set}"
 
-    return get_identifier_pages(PRM, url, session)
+    return get_identifier_pages(PRM, url, session, on_list_size=on_list_size)
 
 
-def collect_ids(PRM: dict, set: str | None, session: requests.Session):
+def collect_ids(PRM: dict, set: str | None, session: requests.Session, on_list_size=None):
     """Sammelt IDs für ein Set. Im Gentle Mode wird vollständig eingesammelt
     (kein Pipelining), sonst wird der Generator zum Pipelining durchgereicht."""
     if PRM["gentle"]:
         return [id for page in generate_id_harvesting_url(PRM, set, session) for id in page]
-    return generate_id_harvesting_url(PRM, set, session)
+    return generate_id_harvesting_url(PRM, set, session, on_list_size=on_list_size)
 
 
 def start_process() -> None:
@@ -272,6 +276,13 @@ def start_process() -> None:
     # Timer starten
     start_time = timeit.default_timer()
 
+    # Wird gefüllt sobald completeListSize bekannt ist (nur bei Pipelining relevant),
+    # damit der Fortschrittsbalken eine Gesamtzahl/ETA anzeigen kann.
+    total_holder: list = [None]
+
+    def _on_list_size(n: int) -> None:
+        total_holder[0] = n
+
     if PRM["id_f"] is not None:
         print(f"{INFO} IDs werden aus {PRM['id_f']} gelesen.")
         ids = read_yaml_file(PRM["id_f"], ["ids"])[0]
@@ -289,7 +300,7 @@ def start_process() -> None:
                 create_id_file(PRM, ids, folder, type="successful")
                 PRM["n_procs"] = min(int(2 * len(ids) / 300 + 4), 16) if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
             elif len(a_sets) == 1:
-                ids = collect_ids(PRM, a_sets[0], session)
+                ids = collect_ids(PRM, a_sets[0], session, on_list_size=_on_list_size)
                 if PRM["gentle"]:
                     create_id_file(PRM, ids, folder, type="successful")
                     PRM["n_procs"] = min(int(2 * len(ids) / 300 + 4), 16) if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
@@ -301,14 +312,14 @@ def start_process() -> None:
                 create_id_file(PRM, ids, folder, type="successful")
                 PRM["n_procs"] = min(int(2 * len(ids) / 300 + 4), 16) if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
             else:
-                ids = collect_ids(PRM, None, session)
+                ids = collect_ids(PRM, None, session, on_list_size=_on_list_size)
                 if PRM["gentle"]:
                     create_id_file(PRM, ids, folder, type="successful")
                     PRM["n_procs"] = min(int(2 * len(ids) / 300 + 4), 16) if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
                 else:
                     PRM["n_procs"] = 16 if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
         else:
-            ids = collect_ids(PRM, None, session)
+            ids = collect_ids(PRM, None, session, on_list_size=_on_list_size)
             if PRM["gentle"]:
                 create_id_file(PRM, ids, folder, type="successful")
                 PRM["n_procs"] = min(int(2 * len(ids) / 300 + 4), 16) if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
@@ -328,7 +339,7 @@ def start_process() -> None:
         change_date(OAITIMESTR, PRM["conf_f"], key="fromdate")
         sys.exit()
     # ---- Start Harvesting ----
-    failed_download, failed_ids = harvest_files(ids, PRM, folder, session)
+    failed_download, failed_ids = harvest_files(ids, PRM, folder, session, total_holder=total_holder)
 
     # ---- Einmaliger Retry für alle fehlgeschlagenen IDs ----
     # failed_ids:       Timeout/Connection-Fehler → einmal wiederholen
