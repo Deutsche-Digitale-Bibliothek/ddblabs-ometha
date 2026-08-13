@@ -1636,6 +1636,117 @@ class TestHarvestFilesPipelining:
         assert not t.is_alive(), "harvest_files hat sich aufgehängt bei leerem Generator"
 
 
+class TestHarvestFilesTotalHolder:
+    """Regression: der Fortschrittsbalken zeigte bei Pipelining keine Gesamtzahl/ETA mehr an.
+    total_holder soll die Gesamtzahl nachreichen, sobald sie bekannt ist."""
+
+    def test_total_holder_used_for_list_ids(self, requests_mock, prm_base, tmp_path, session):
+        """Bei einer normalen Liste ist die Gesamtzahl sofort bekannt (len(ids)),
+        total_holder wird dafür nicht gebraucht, darf aber übergeben werden ohne Fehler."""
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord(f"oai:mock:th{i:03d}") for i in range(3)]
+        OAIMock(records=records).register(requests_mock)
+
+        prm = {**prm_base, "out_f": str(tmp_path)}
+        ids = [r.identifier for r in records]
+        total_holder = [None]
+        failed_dl, failed_ids = harvest_files(
+            ids, prm, str(tmp_path), session=session, total_holder=total_holder
+        )
+        assert failed_dl == []
+        assert failed_ids == []
+
+    def test_total_holder_filled_by_generator_used_for_pipelining(
+        self, requests_mock, prm_base, tmp_path, session
+    ):
+        """Wenn ids ein Generator ist und total_holder während der Iteration befüllt wird,
+        muss harvest_files trotzdem alle IDs vollständig verarbeiten."""
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord(f"oai:mock:gen{i:03d}") for i in range(4)]
+        OAIMock(records=records).register(requests_mock)
+
+        prm = {**prm_base, "out_f": str(tmp_path)}
+        total_holder = [None]
+
+        def id_generator():
+            # simuliert get_identifier_pages: befüllt total_holder bei der ersten Seite
+            total_holder[0] = 4
+            yield [r.identifier for r in records[:2]]
+            yield [r.identifier for r in records[2:]]
+
+        failed_dl, failed_ids = harvest_files(
+            id_generator(), prm, str(tmp_path), session=session, total_holder=total_holder
+        )
+        assert len(list(tmp_path.rglob("*.xml"))) == 4
+        assert failed_dl == []
+        assert failed_ids == []
+
+    def test_none_total_holder_does_not_crash(self, requests_mock, prm_base, tmp_path, session):
+        """Ohne total_holder (Default None) muss harvest_files weiterhin funktionieren
+        (Rückwärtskompatibilität, z. B. für gui.py)."""
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord("oai:mock:notota001")]
+        OAIMock(records=records).register(requests_mock)
+
+        prm = {**prm_base, "out_f": str(tmp_path)}
+        failed_dl, failed_ids = harvest_files(
+            ["oai:mock:notota001"], prm, str(tmp_path), session=session
+        )
+        assert failed_dl == []
+        assert failed_ids == []
+
+
+class TestHarvestFilesIncrementalProgress:
+    """Regression: der Fortschrittsbalken stand während der gesamten ID-Sammelphase
+    bei 0, weil zuerst alle IDs aus der Queue gezogen und Futures eingereicht wurden,
+    bevor überhaupt ein pbar.update() lief. Jetzt aktualisiert ein done-callback den
+    Fortschritt sofort bei jedem abgeschlossenen Download."""
+
+    def test_all_results_recorded_even_with_interleaved_submission(
+        self, requests_mock, prm_base, tmp_path, session
+    ):
+        """Auch wenn IDs seitenweise nachkommen (Generator statt Liste), müssen am
+        Ende alle Downloads erfolgreich verzeichnet sein – kein Ergebnis darf durch
+        die Umstellung auf done-callbacks verloren gehen."""
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord(f"oai:mock:prog{i:03d}") for i in range(10)]
+        OAIMock(records=records).register(requests_mock)
+
+        prm = {**prm_base, "out_f": str(tmp_path), "n_procs": 3}
+
+        def id_generator():
+            ids = [r.identifier for r in records]
+            for i in range(0, len(ids), 3):
+                yield ids[i : i + 3]
+
+        failed_dl, failed_ids = harvest_files(id_generator(), prm, str(tmp_path), session=session)
+
+        assert len(list(tmp_path.rglob("*.xml"))) == 10
+        assert failed_dl == []
+        assert failed_ids == []
+
+    def test_failed_and_successful_mixed_all_recorded(
+        self, requests_mock, prm_base, tmp_path, session
+    ):
+        """Mischung aus erfolgreichen und fehlschlagenden Downloads: alle Ergebnisse
+        müssen über die done-callbacks korrekt eingesammelt werden."""
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord("oai:mock:ok001")]
+        OAIMock(records=records).register(requests_mock)
+
+        prm = {**prm_base, "out_f": str(tmp_path)}
+        ids = ["oai:mock:ok001", "oai:mock:doesnotexist"]
+        failed_dl, failed_ids = harvest_files(ids, prm, str(tmp_path), session=session)
+
+        assert "oai:mock:doesnotexist" in failed_dl
+        assert len(list(tmp_path.rglob("*.xml"))) == 1
+
+
 # ---------------------------------------------------------------------------
 # Regression: log_critical_and_print_and_exit muss immer exiten
 # ---------------------------------------------------------------------------

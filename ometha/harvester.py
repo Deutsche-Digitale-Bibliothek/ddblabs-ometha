@@ -1,10 +1,10 @@
 import json
+import queue
 import os
 import re
 import sys
 import time
 import threading
-import queue
 from collections import defaultdict, deque
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -120,22 +120,7 @@ def get_identifier_pages(
     session: Session,
     on_list_size: Callable[[int], None] | None = None,
 ):
-    """Generator that yields one page of OAI identifiers at a time.
-
-    Yields each page as a list of identifier strings so callers can start
-    processing before all pages are fetched (pipelining).
-    Retries on transient failures with exponential backoff and saves
-    checkpoint tokens periodically.
-
-    Args:
-        PRM: Parameters dictionary with harvesting configuration.
-        url: Initial ListIdentifiers URL.
-        session: HTTP session to use for requests.
-        on_list_size: Optional callback invoked with the total list size once known.
-
-    Yields:
-        Lists of OAI identifier strings, one list per ListIdentifiers page.
-    """
+    """Generator: yields one page of OAI identifiers at a time (pipelining)."""
     token_save_interval = 1000
     last_token = None
     total_yielded = 0
@@ -144,7 +129,6 @@ def get_identifier_pages(
     while True:
         retry_count = 0
         max_retries = 3
-
         while retry_count < max_retries:
             try:
                 response = session.get(url, verify=False, timeout=(30, 120))
@@ -158,31 +142,25 @@ def get_identifier_pages(
                         try:
                             token_file = write_checkpoint_yaml(last_token, total_yielded, PRM, label="Abbruch-Checkpoint")
                             print(f"\n{INFO}Checkpoint gespeichert: {token_file}")
-                            logger.info(f"Saved resumption token checkpoint to {token_file}")
                         except Exception as save_err:
                             logger.error(f"Could not save resumption token: {save_err}")
                     handle_error(e, PRM["mode"], url)
                 else:
                     wait_time = 10 * (2**retry_count)
-                    print(f"\n{ACHTUNG}Retry {retry_count}/{max_retries} after {wait_time}s due to error...")
-                    logger.warning(f"Retrying after {wait_time}s (attempt {retry_count}/{max_retries})")
+                    print(f"\n{ACHTUNG}Retry {retry_count}/{max_retries} after {wait_time}s...")
                     time.sleep(wait_time)
                     continue
 
-        # ListSize beim ersten Request ermitteln
         if first_page:
             first_page = False
             list_size = re.search(r"completeListSize=[\"|\'](\d+)[\"|\']", response.text)
             print_and_log(
                 f"{INFO}Angegebene ListSize: {list_size.group(1)}",
-                logger,
-                "info",
-                end="",
+                logger, "info", end="",
             ) if list_size else print("Keine ListSize angegeben")
             if list_size and on_list_size:
                 on_list_size(int(list_size.group(1)))
 
-        # Token auslesen
         token = root.findtext(f".//{NAMESPACE}resumptionToken") or None
         if token and token.strip():
             token = token.strip()
@@ -191,17 +169,14 @@ def get_identifier_pages(
             token = None
         logger.info(f"Token: {token}") if PRM["debug"] else None
 
-        # IDs dieser Seite sofort yielden
         page_ids = [ids.text for ids in root.findall(f".//{NAMESPACE}identifier")]
         total_yielded += len(page_ids)
 
-        # Checkpoint periodisch speichern
         if token and total_yielded % token_save_interval == 0:
             try:
-                token_file = write_checkpoint_yaml(token, total_yielded, PRM)
-                logger.info(f"Saved checkpoint at {total_yielded} IDs to {token_file}")
+                write_checkpoint_yaml(token, total_yielded, PRM)
             except Exception as save_err:
-                logger.warning(f"Could not save resumption token checkpoint: {save_err}")
+                logger.warning(f"Could not save checkpoint: {save_err}")
 
         yield page_ids
 
@@ -221,15 +196,7 @@ def get_identifier(
     session: Session,
     on_list_size: Callable[[int], None] | None = None,
 ) -> list[str]:
-    """Collect all OAI identifiers into a list (wraps get_identifier_pages).
-
-    Retained for backwards compatibility with GUI and ID-file mode.
-    For large repositories, harvest_files benefits automatically from
-    pipelining via get_identifier_pages internally.
-
-    Returns:
-        A list of all harvested OAI identifier strings.
-    """
+    """Wrapper around get_identifier_pages for backwards compatibility."""
     spinner = yaspin(Spinners.dots)
     spinner.start()
     id_list: list[str] = []
@@ -244,12 +211,22 @@ def get_identifier(
     return id_list
 
 
-def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Session) -> tuple[list[str], list[str]]:
+def harvest_files(
+    ids: list[str],
+    PRM: dict[str, Any],
+    folder: str,
+    session: Session,
+    total_holder: list | None = None,
+) -> tuple[list[str], list[str]]:
     """
     Liest ID Liste und lädt die IDs einzeln über GetRecord.
-    :param ids: List of IDs
+    :param ids: List of IDs, or an iterator/generator yielding pages of IDs (pipelining)
     :param PRM: dict of parameters
     :param folder: str of the folder path
+    :param session: HTTP session to use for requests
+    :param total_holder: optional single-element list; when ids is a generator, this
+        gets filled in with the expected total ID count (from completeListSize) as
+        soon as it becomes known, so the progress bar can display an ETA
     :return: tuple with failed_download, failed_ids ID-Lists
     """
 
@@ -295,7 +272,6 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
             return True
 
     def is_deleted(response_text: str) -> bool:
-        """Return True if the OAI record has status='deleted' in its header."""
         try:
             root = etree.fromstring(response_text.encode())
             header = root.find(f".//{NAMESPACE}header")
@@ -304,49 +280,41 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
             return False
 
     def is_invalid(response_text: str) -> bool:
-        """Return True if the record has no grandchild node under //metadata."""
         try:
             root = etree.fromstring(response_text.encode())
             return not root.findall(f".//{NAMESPACE}metadata/*/*")
         except Exception:
             return True
 
-    # Rate-Limit-Zustand (geteilt über alle Worker)
     _rate_limit_lock = threading.Lock()
     _last_request_time = [0.0]
 
-    # Pipelining: Producer-Thread speist Queue, Worker konsumieren parallel
-    # Wenn ids eine Liste ist (ID-File-Modus), wird sie direkt verwendet.
-    # Wenn ids ein Generator/Iterator ist, wird er seitenweise konsumiert.
-    QUEUE_SIZE = 500  # Backpressure: Producer wartet wenn Queue voll
+    QUEUE_SIZE = 500
     id_queue: queue.Queue = queue.Queue(maxsize=QUEUE_SIZE)
     _SENTINEL = object()
-
-    # Zähler für tqdm und get_subfolder – wird im Producer-Thread inkrementiert
     enqueued_count = [0]
-    total_ids: list[int] = []  # wird gesetzt sobald bekannt (aus ids-Liste oder ListSize)
 
     def producer() -> None:
-        """Speist IDs aus Liste oder Generator in die Queue."""
         try:
             if isinstance(ids, list):
                 if not ids:
                     log_critical_and_print_and_exit(
                         f"{SEP_LINE}Keine Identifier bekommen, breche ab.", PRM["mode"]
                     )
-                total_ids.append(len(ids))
                 print_and_log(f"{SEP_LINE}Harveste {len(ids)} IDs.", logger, "info")
                 for oai_id in ids:
                     id_queue.put(oai_id)
                     enqueued_count[0] += 1
             else:
-                # Iterator/Generator (get_identifier_pages): seitenweise
                 for page_ids in ids:
                     for oai_id in page_ids:
                         id_queue.put(oai_id)
                         enqueued_count[0] += 1
         finally:
             id_queue.put(_SENTINEL)
+
+    if isinstance(ids, list) and len(ids) == 0:
+        log_critical_and_print_and_exit(f"{SEP_LINE}Keine Identifier bekommen, breche ab.", PRM["mode"])
 
     # ------------------------------------------------------------------ #
     # Gemeinsame Steuerparameter                                           #
@@ -455,7 +423,6 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
             target_folder = get_subfolder(folder, index)
             oai_id = parse_qs(urlparse(url).query)["identifier"][0]
             export_type = PRM["exp_type"]
-            # Rate Limiting
             ratelimit = PRM.get("ratelimit")
             if ratelimit:
                 with _rate_limit_lock:
@@ -474,7 +441,6 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
                     if errors := re.findall(r'error\scode="(.+)">(.+)</error>', resp.text):
                         logger.warning(f"Datei {url} konnte nicht geharvestet werden ('{errors[0][0]}')")
                         return {"failed_download": oai_id}
-                    # Handle deleted records
                     if is_deleted(resp.text):
                         deleted_handling = PRM.get("deleted_handling", "keep")
                         if deleted_handling == "skip":
@@ -488,12 +454,11 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
                             return {"deleted": oai_id}
                         else:
                             logger.info(f"Gelöschter Record gespeichert (keep): {oai_id}")
-                    # Handle invalid records
                     elif is_invalid(resp.text):
                         invalid_folder = os.path.join(folder, "_invalid")
                         os.makedirs(invalid_folder, exist_ok=True)
                         save_file(oai_id, invalid_folder, resp.text, export_type)
-                        logger.warning(f"Ungültiger Record (kein //metadata/*/*) in _invalid/ verschoben: {oai_id}")
+                        logger.warning(f"Ungültiger Record in _invalid/ verschoben: {oai_id}")
                         return {"invalid": oai_id}
                     if not save_file(oai_id, target_folder, resp.text, export_type):
                         return {"failed_download": oai_id}
@@ -512,16 +477,31 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
         f"Timeout {current_timeout[0]:.0f}s (max. {MAX_TIMEOUT}s)"
     )
 
-    # Producer-Thread starten
     producer_thread = threading.Thread(target=producer, daemon=True)
     producer_thread.start()
 
     failed_oaiids: list[dict[str, str] | None] = []
-    global_index = [0]  # thread-safe index für get_subfolder
+    global_index = [0]
+
+    # Initiale Gesamtzahl: bei Liste sofort bekannt, bei Pipelining ggf. noch nicht
+    # (wird über total_holder nachgereicht, sobald completeListSize geparst wurde)
+    initial_total = len(ids) if isinstance(ids, list) else (total_holder[0] if total_holder else None)
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        with tqdm(total=None, desc="Harveste...", unit="files", dynamic_ncols=True) as pbar:
-            futures = {}
+        with tqdm(total=initial_total, desc="Harveste...", unit="files", dynamic_ncols=True) as pbar:
+
+            def on_future_done(future) -> None:
+                """Aktualisiert Fortschrittsbalken sofort bei Abschluss eines Downloads,
+                statt erst nachdem alle IDs aus der Queue gezogen wurden."""
+                result = future.result()
+                with lock:
+                    failed_oaiids.append(result)
+                    if pbar.total is None and total_holder and total_holder[0] is not None:
+                        pbar.total = total_holder[0]
+                    pbar.update(1)
+                    pbar.set_postfix(workers=n_workers, timeout=f"{current_timeout[0]:.0f}s")
+
+            futures = []
             while True:
                 oai_id = id_queue.get()
                 if oai_id is _SENTINEL:
@@ -533,14 +513,13 @@ def harvest_files(ids: list[str], PRM: dict[str, Any], folder: str, session: Ses
                     idx,
                 )
                 future = executor.submit(throttled_download, url_with_index)
-                futures[future] = url_with_index
+                future.add_done_callback(on_future_done)
+                futures.append(future)
 
-            # Warten bis alle laufenden Downloads fertig sind
+            # Wartet bis alle Downloads abgeschlossen sind. Der Fortschritt läuft
+            # währenddessen bereits über on_future_done, nicht erst danach.
             for future in as_completed(futures):
-                failed_oaiids.append(future.result())
-                pbar.update(1)
-                with lock:
-                    pbar.set_postfix(workers=n_workers, timeout=f"{current_timeout[0]:.0f}s")
+                pass
 
     producer_thread.join()
     stop_event.set()
