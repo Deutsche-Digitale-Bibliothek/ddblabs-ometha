@@ -23,6 +23,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - The progress bar now shows a total/ETA again once `completeListSize` is
   known from the first `ListIdentifiers` page, even in pipelined mode
+- Ometha now writes a structured XML summary (`_ometha_{datengeber}_summary.xml`)
+  at the end of each harvesting run, containing source parameters (base URL,
+  metadata prefix, sets, date range), configuration (datengeber, export type,
+  deleted-record handling, gentle mode), and result counts (total, successful,
+  failed, skipped/moved deleted, moved invalid). Intended for downstream
+  ingestion into eXist-db or similar XML-native systems.
+- `harvest_files()` accepts an optional `stats` dict, populated in place with
+  run counts; existing callers are unaffected since the parameter is optional
+  and the return value is unchanged
 
 ## [2.4.0] - 2026-08-06
 
