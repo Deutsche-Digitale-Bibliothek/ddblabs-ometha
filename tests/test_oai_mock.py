@@ -709,6 +709,23 @@ class TestTimeoutHandling:
         assert "oai:mock:500" in failed_dl
         assert failed_ids == []
 
+    def test_calc_retry_n_procs_bei_leerer_failed_ids_liste(self):
+        """Regression: Wenn nur failed_download (nicht failed_ids) gefüllt ist,
+        crashte main.py mit ZeroDivisionError, weil durch len(failed_ids)==0
+        geteilt wurde (siehe test_http_500_geht_in_failed_download)."""
+        from ometha.main import calc_retry_n_procs
+
+        assert calc_retry_n_procs([], ["id1", "id2", "id3"]) == 1
+
+    def test_calc_retry_n_procs_skaliert_mit_fehlerquote(self):
+        from ometha.main import calc_retry_n_procs
+
+        ids = [f"id{i}" for i in range(100)]
+        # Wenige Fehler → viele parallele Downloads erlaubt (gedeckelt bei 6)
+        assert calc_retry_n_procs(ids[:5], ids) == 6
+        # Viele Fehler → wenige parallele Downloads
+        assert calc_retry_n_procs(ids, ids) == 2
+
     # ------------------------------------------------------------------
     # get_identifier(): Retry-Logik bei langsamer Schnittstelle
     # ------------------------------------------------------------------

@@ -40,6 +40,19 @@ from .helpers import (
 from .tui import interactiveMode
 
 
+def calc_retry_n_procs(failed_ids, ids):
+    """Anzahl paralleler Downloads für den Retry-Durchlauf.
+
+    Je kleiner der Anteil fehlgeschlagener IDs, desto mehr parallele
+    Downloads sind beim Retry vertretbar. Bei leerer `failed_ids`-Liste
+    (z.B. wenn nur `failed_download` fehlgeschlagen ist) würde die
+    ursprüngliche Formel `1 / (len(failed_ids) / len(ids))` durch 0 teilen.
+    """
+    if not failed_ids:
+        return 1
+    return min(int(1 / (len(failed_ids) / len(ids)) + 1), 6)
+
+
 def generate_id_harvesting_url(PRM: dict, set: str, session: requests.Session) -> list[str]:
     """Build a ListIdentifiers URL from PRM parameters and return all harvested IDs.
 
@@ -286,7 +299,7 @@ def start_process() -> None:
             logger,
             "warning",
         )
-        PRM["n_procs"] = min(int(1 / (len(failed_ids) / len(ids)) + 1), 6)
+        PRM["n_procs"] = calc_retry_n_procs(failed_ids, ids)
         failed_download, failed_ids = harvest_files(failed_ids, PRM, folder, session)
         if failed_ids or failed_download:
             print_and_log(
