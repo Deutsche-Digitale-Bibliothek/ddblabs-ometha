@@ -37,6 +37,7 @@ from .helpers import (
     isinvalid_xml_content,
     log_critical_and_print_and_exit,
     print_and_log,
+    safe_get,
 )
 
 
@@ -132,7 +133,7 @@ def get_identifier_pages(
         max_retries = 3
         while retry_count < max_retries:
             try:
-                response = session.get(url, verify=False, timeout=(30, 120))
+                response = safe_get(session, url, timeout=(30, 120))
                 response.raise_for_status()
                 root = isinvalid_xml_content(response, url, PRM["mode"])
                 break
@@ -436,7 +437,7 @@ def harvest_files(
                         time.sleep(wait)
                     _last_request_time[0] = time.monotonic()
             try:
-                with session.get(url, timeout=t) as resp:
+                with safe_get(session, url, timeout=t) as resp:
                     elapsed = time.monotonic() - t_start
                     with lock:
                         latency_window.append(elapsed)
