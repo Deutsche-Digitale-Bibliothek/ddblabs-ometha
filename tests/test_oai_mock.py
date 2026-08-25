@@ -1636,6 +1636,66 @@ class TestHarvestFilesPipelining:
         assert not t.is_alive(), "harvest_files hat sich aufgehängt bei leerem Generator"
 
 
+class TestCompleteListSizeOptional:
+    """Regression: completeListSize ist laut OAI-PMH-Spec optional (§3.1.1.4).
+    Fehlt es in der Server-Antwort, muss Ometha ohne Crash weiterlaufen –
+    einfach ohne ETA/Gesamtzahl im Fortschrittsbalken."""
+
+    def test_missing_complete_list_size_does_not_crash(self, requests_mock, prm_base, session):
+        """on_list_size darf nie aufgerufen werden, wenn completeListSize fehlt."""
+        from ometha.harvester import get_identifier_pages
+
+        xml_no_list_size = """<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+  <ListIdentifiers>
+    <header><identifier>oai:mock:nols001</identifier><datestamp>2024-01-01T00:00:00Z</datestamp></header>
+    <resumptionToken/>
+  </ListIdentifiers>
+</OAI-PMH>"""
+        requests_mock.get(
+            f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc",
+            text=xml_no_list_size,
+        )
+
+        received = []
+        pages = list(
+            get_identifier_pages(
+                prm_base,
+                f"{BASE_URL}?verb=ListIdentifiers&metadataPrefix=oai_dc",
+                session,
+                on_list_size=lambda n: received.append(n),
+            )
+        )
+
+        assert pages == [["oai:mock:nols001"]]
+        assert received == []  # Callback wurde nie aufgerufen, kein Crash
+
+    def test_missing_complete_list_size_leaves_progress_bar_without_eta(
+        self, requests_mock, prm_base, tmp_path, session
+    ):
+        """End-to-End: harvest_files muss auch dann fehlerfrei durchlaufen, wenn die
+        Schnittstelle nie eine completeListSize liefert und total_holder[0] dauerhaft
+        None bleibt."""
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord(f"oai:mock:noeta{i:03d}") for i in range(3)]
+        OAIMock(records=records).register(requests_mock)
+
+        prm = {**prm_base, "out_f": str(tmp_path)}
+        total_holder = [None]  # bleibt None, simuliert fehlende completeListSize
+
+        def id_generator():
+            yield [r.identifier for r in records]
+
+        failed_dl, failed_ids = harvest_files(
+            id_generator(), prm, str(tmp_path), session=session, total_holder=total_holder
+        )
+
+        assert len(list(tmp_path.rglob("*.xml"))) == 3
+        assert failed_dl == []
+        assert total_holder[0] is None  # unverändert, aber kein Crash
+
+
 class TestHarvestFilesTotalHolder:
     """Regression: der Fortschrittsbalken zeigte bei Pipelining keine Gesamtzahl/ETA mehr an.
     total_holder soll die Gesamtzahl nachreichen, sobald sie bekannt ist."""
@@ -1838,3 +1898,256 @@ class TestIsInvalidXmlContentRegression:
         message = mock_exit.call_args[0][0]
         assert "XML Syntax Error" in message
         assert "http://example.org/oai" in message
+
+
+# ---------------------------------------------------------------------------
+# harvest_files: stats-Parameter für Lauf-Statistiken
+# ---------------------------------------------------------------------------
+
+
+class TestHarvestFilesStats:
+    """stats-Dict wird in-place mit Lauf-Statistiken befüllt (für Zusammenfassung)."""
+
+    def test_stats_none_by_default_no_crash(self, requests_mock, prm_base, tmp_path, session):
+        """Ohne stats-Argument (Default None) muss harvest_files weiterhin funktionieren."""
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord("oai:mock:stats001")]
+        OAIMock(records=records).register(requests_mock)
+
+        prm = {**prm_base, "out_f": str(tmp_path)}
+        failed_dl, failed_ids = harvest_files(["oai:mock:stats001"], prm, str(tmp_path), session=session)
+        assert failed_dl == []
+
+    def test_stats_populated_all_successful(self, requests_mock, prm_base, tmp_path, session):
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord(f"oai:mock:allok{i:03d}") for i in range(5)]
+        OAIMock(records=records).register(requests_mock)
+
+        prm = {**prm_base, "out_f": str(tmp_path)}
+        stats: dict = {}
+        harvest_files([r.identifier for r in records], prm, str(tmp_path), session=session, stats=stats)
+
+        assert stats["total"] == 5
+        assert stats["successful"] == 5
+        assert stats["failed_download"] == 0
+        assert stats["failed_ids"] == 0
+        assert stats["skipped_deleted"] == 0
+        assert stats["moved_deleted"] == 0
+        assert stats["moved_invalid"] == 0
+
+    def test_stats_counts_failed_download(self, requests_mock, prm_base, tmp_path, session):
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord("oai:mock:okstat001")]
+        OAIMock(records=records).register(requests_mock)
+
+        prm = {**prm_base, "out_f": str(tmp_path)}
+        ids = ["oai:mock:okstat001", "oai:mock:doesnotexist"]
+        stats: dict = {}
+        harvest_files(ids, prm, str(tmp_path), session=session, stats=stats)
+
+        assert stats["total"] == 2
+        assert stats["successful"] == 1
+        assert stats["failed_download"] == 1
+
+    def test_stats_counts_deleted_folder_mode(self, requests_mock, prm_base, tmp_path, session):
+        from ometha.harvester import harvest_files
+
+        records = [
+            OAIRecord("oai:mock:normalstat001"),
+            OAIRecord("oai:mock:delstat001", deleted=True),
+        ]
+        OAIMock(records=records).register(requests_mock)
+
+        prm = {**prm_base, "out_f": str(tmp_path), "deleted_handling": "folder"}
+        stats: dict = {}
+        harvest_files(
+            ["oai:mock:normalstat001", "oai:mock:delstat001"],
+            prm, str(tmp_path), session=session, stats=stats,
+        )
+
+        assert stats["total"] == 2
+        assert stats["successful"] == 1
+        assert stats["moved_deleted"] == 1
+
+    def test_stats_counts_skipped_deleted(self, requests_mock, prm_base, tmp_path, session):
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord("oai:mock:skipstat001", deleted=True)]
+        OAIMock(records=records).register(requests_mock)
+
+        prm = {**prm_base, "out_f": str(tmp_path), "deleted_handling": "skip"}
+        stats: dict = {}
+        harvest_files(["oai:mock:skipstat001"], prm, str(tmp_path), session=session, stats=stats)
+
+        assert stats["total"] == 1
+        assert stats["successful"] == 0
+        assert stats["skipped_deleted"] == 1
+
+    def test_stats_counts_invalid_records(self, requests_mock, prm_base, tmp_path, session):
+        from ometha.harvester import harvest_files
+
+        xml_empty_metadata = """<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+  <GetRecord>
+    <record>
+      <header><identifier>oai:mock:invstat001</identifier><datestamp>2024-01-01T00:00:00Z</datestamp></header>
+      <metadata><oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/"/></metadata>
+    </record>
+  </GetRecord>
+</OAI-PMH>"""
+        requests_mock.get(
+            f"{BASE_URL}?verb=GetRecord&metadataPrefix=oai_dc&identifier=oai:mock:invstat001",
+            text=xml_empty_metadata,
+        )
+
+        prm = {**prm_base, "out_f": str(tmp_path)}
+        stats: dict = {}
+        harvest_files(["oai:mock:invstat001"], prm, str(tmp_path), session=session, stats=stats)
+
+        assert stats["total"] == 1
+        assert stats["successful"] == 0
+        assert stats["moved_invalid"] == 1
+
+
+# ---------------------------------------------------------------------------
+# write_summary_xml
+# ---------------------------------------------------------------------------
+
+
+class TestWriteSummaryXml:
+    """Tests für die XML-Zusammenfassung am Ende eines Harvesting-Laufs."""
+
+    def _prm(self, tmp_path, **overrides):
+        base = {
+            "b_url": "http://mock-oai.test/oai",
+            "pref": "oai_dc",
+            "sets": [{"additive": ["setA", "setB"], "intersection": []}],
+            "f_date": "2024-01-01",
+            "u_date": "2024-12-31",
+            "dat_geb": "TestPartner",
+            "exp_type": "xml",
+            "deleted_handling": "folder",
+            "gentle": False,
+        }
+        return {**base, **overrides}
+
+    def _stats(self, **overrides):
+        base = {
+            "total": 10,
+            "successful": 8,
+            "failed_download": 1,
+            "failed_ids": 0,
+            "skipped_deleted": 0,
+            "moved_deleted": 1,
+            "moved_invalid": 0,
+        }
+        return {**base, **overrides}
+
+    def test_file_is_created_with_expected_name(self, tmp_path):
+        from ometha.harvester import write_summary_xml
+
+        prm = self._prm(tmp_path)
+        path = write_summary_xml(prm, str(tmp_path), self._stats(), "00:01:23.456")
+        assert os.path.basename(path) == "_ometha_TestPartner_summary.xml"
+        assert os.path.exists(path)
+
+    def test_file_is_valid_xml(self, tmp_path):
+        from ometha.harvester import write_summary_xml
+        from lxml import etree
+
+        prm = self._prm(tmp_path)
+        path = write_summary_xml(prm, str(tmp_path), self._stats(), "00:01:23.456")
+        root = etree.parse(path).getroot()
+        assert root.tag == "harvestSummary"
+
+    def test_source_fields_present(self, tmp_path):
+        from ometha.harvester import write_summary_xml
+        from lxml import etree
+
+        prm = self._prm(tmp_path)
+        path = write_summary_xml(prm, str(tmp_path), self._stats(), "00:01:23.456")
+        root = etree.parse(path).getroot()
+
+        assert root.findtext("source/baseUrl") == "http://mock-oai.test/oai"
+        assert root.findtext("source/metadataPrefix") == "oai_dc"
+        assert root.findtext("source/fromDate") == "2024-01-01"
+        assert root.findtext("source/untilDate") == "2024-12-31"
+        sets = [el.text for el in root.findall("source/sets/set")]
+        assert sets == ["setA", "setB"]
+
+    def test_config_fields_present(self, tmp_path):
+        from ometha.harvester import write_summary_xml
+        from lxml import etree
+
+        prm = self._prm(tmp_path, gentle=True)
+        path = write_summary_xml(prm, str(tmp_path), self._stats(), "00:01:23.456")
+        root = etree.parse(path).getroot()
+
+        assert root.findtext("config/datengeber") == "TestPartner"
+        assert root.findtext("config/exportType") == "xml"
+        assert root.findtext("config/deletedHandling") == "folder"
+        assert root.findtext("config/gentle") == "true"
+
+    def test_results_fields_match_stats(self, tmp_path):
+        from ometha.harvester import write_summary_xml
+        from lxml import etree
+
+        prm = self._prm(tmp_path)
+        stats = self._stats(total=42, successful=40, failed_download=2)
+        path = write_summary_xml(prm, str(tmp_path), stats, "00:01:23.456")
+        root = etree.parse(path).getroot()
+
+        assert root.findtext("results/total") == "42"
+        assert root.findtext("results/successful") == "40"
+        assert root.findtext("results/failedDownload") == "2"
+
+    def test_runtime_and_version_present(self, tmp_path):
+        from ometha.harvester import write_summary_xml
+        from lxml import etree
+        from ometha._version import __version__
+
+        prm = self._prm(tmp_path)
+        path = write_summary_xml(prm, str(tmp_path), self._stats(), "00:12:34.567")
+        root = etree.parse(path).getroot()
+
+        assert root.findtext("meta/runtime") == "00:12:34.567"
+        assert root.find("meta/ometha").get("version") == __version__
+
+    def test_missing_dates_omitted_not_empty_tags(self, tmp_path):
+        """Wenn fromDate/untilDate nicht gesetzt sind, sollen sie nicht als
+        leere Tags auftauchen, sondern ganz fehlen."""
+        from ometha.harvester import write_summary_xml
+        from lxml import etree
+
+        prm = self._prm(tmp_path, f_date=None, u_date=None)
+        path = write_summary_xml(prm, str(tmp_path), self._stats(), "00:01:23.456")
+        root = etree.parse(path).getroot()
+
+        assert root.find("source/fromDate") is None
+        assert root.find("source/untilDate") is None
+
+    def test_no_sets_produces_empty_sets_element(self, tmp_path):
+        from ometha.harvester import write_summary_xml
+        from lxml import etree
+
+        prm = self._prm(tmp_path, sets=None)
+        path = write_summary_xml(prm, str(tmp_path), self._stats(), "00:01:23.456")
+        root = etree.parse(path).getroot()
+
+        sets_el = root.find("source/sets")
+        assert sets_el is not None
+        assert len(sets_el) == 0
+
+    def test_special_characters_in_baseurl_escaped_correctly(self, tmp_path):
+        """Regression: Base-URLs mit &-Zeichen in der Query müssen korrekt
+        XML-escaped werden (kein String-Format-Bug)."""
+        from ometha.harvester import write_summary_xml
+        from lxml import etree
+
+        prm = self._prm(tmp_path, b_url="http://example.org/oai?a=1&b=2")
+        path = write_summary_xml(prm, str(tmp_path), self._stats(), "00:01:23.456")
+        root = etree.parse(path).getroot()
+        assert root.findtext("source/baseUrl") == "http://example.org/oai?a=1&b=2"

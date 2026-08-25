@@ -26,6 +26,7 @@ from .harvester import (
     get_identifier_pages,
     harvest_files,
     read_yaml_file,
+    write_summary_xml,
 )
 from .helpers import (
     ACHTUNG,
@@ -339,7 +340,10 @@ def start_process() -> None:
         change_date(OAITIMESTR, PRM["conf_f"], key="fromdate")
         sys.exit()
     # ---- Start Harvesting ----
-    failed_download, failed_ids = harvest_files(ids, PRM, folder, session, total_holder=total_holder)
+    stats: dict = {}
+    failed_download, failed_ids = harvest_files(
+        ids, PRM, folder, session, total_holder=total_holder, stats=stats
+    )
 
     # ---- Einmaliger Retry für alle fehlgeschlagenen IDs ----
     # failed_ids:       Timeout/Connection-Fehler → einmal wiederholen
@@ -359,7 +363,17 @@ def start_process() -> None:
         # Weniger parallele Worker für den Retry – schont langsame Schnittstellen
         retry_n_procs = min(max(1, PRM["n_procs"] // 2), 6) if PRM["n_procs"] else 4
         PRM_retry = {**PRM, "n_procs": retry_n_procs}
-        failed_download, failed_ids = harvest_files(retry_ids, PRM_retry, folder, session)
+        retry_stats: dict = {}
+        failed_download, failed_ids = harvest_files(retry_ids, PRM_retry, folder, session, stats=retry_stats)
+        # Zusammenfassung an den finalen Stand nach dem Retry anpassen:
+        # ursprünglich fehlgeschlagene IDs, die beim Retry doch erfolgreich waren,
+        # zählen jetzt als erfolgreich; die verbleibenden als endgültig fehlgeschlagen.
+        stats["successful"] = stats.get("successful", 0) + retry_stats.get("successful", 0)
+        stats["skipped_deleted"] = stats.get("skipped_deleted", 0) + retry_stats.get("skipped_deleted", 0)
+        stats["moved_deleted"] = stats.get("moved_deleted", 0) + retry_stats.get("moved_deleted", 0)
+        stats["moved_invalid"] = stats.get("moved_invalid", 0) + retry_stats.get("moved_invalid", 0)
+        stats["failed_download"] = len(failed_download)
+        stats["failed_ids"] = len(failed_ids)
         if failed_ids or failed_download:
             print_and_log(
                 f"{SEP_LINE}{INFO} Nach erneutem Versuch: "
@@ -381,6 +395,8 @@ def start_process() -> None:
         minutes, seconds = divmod(remainder, 60)
         runtime = f"{int(hours):02}:{int(minutes):02}:{seconds:.3f}"
         print_and_log(f"{SEP_LINE}{INFO} Vorgang hat {runtime} gedauert", logger, "info")
+        summary_file = write_summary_xml(PRM, folder, stats, runtime)
+        print_and_log(f"{INFO} Zusammenfassung: {summary_file}", logger, "info")
 
     change_date(OAITIMESTR, PRM["conf_f"], key="fromdate")
 

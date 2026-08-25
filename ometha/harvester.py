@@ -29,6 +29,7 @@ from .helpers import (
     FEHLER,
     INFO,
     NAMESPACE,
+    OAITIMESTR,
     PRM,
     SEP_LINE,
     TIMESTR,
@@ -217,6 +218,7 @@ def harvest_files(
     folder: str,
     session: Session,
     total_holder: list | None = None,
+    stats: dict | None = None,
 ) -> tuple[list[str], list[str]]:
     """
     Liest ID Liste und lädt die IDs einzeln über GetRecord.
@@ -227,6 +229,9 @@ def harvest_files(
     :param total_holder: optional single-element list; when ids is a generator, this
         gets filled in with the expected total ID count (from completeListSize) as
         soon as it becomes known, so the progress bar can display an ETA
+    :param stats: optional dict, populated in place with run counts (successful,
+        failed_download, failed_ids, skipped_deleted, moved_deleted, moved_invalid)
+        for use in a run summary
     :return: tuple with failed_download, failed_ids ID-Lists
     """
 
@@ -556,6 +561,22 @@ def harvest_files(
         print_and_log(f"{INFO}{len(moved_deleted)} gelöschte Records in _deleted/ verschoben.", logger, "info")
     if moved_invalid:
         print_and_log(f"{INFO}{len(moved_invalid)} ungültige Records in _invalid/ verschoben.", logger, "info")
+
+    if stats is not None:
+        total = len(failed_oaiids)
+        successful = total - len(failed_download) - len(failed_ids) - len(skipped_deleted) - len(moved_deleted) - len(moved_invalid)
+        stats.update(
+            {
+                "total": total,
+                "successful": successful,
+                "failed_download": len(failed_download),
+                "failed_ids": len(failed_ids),
+                "skipped_deleted": len(skipped_deleted),
+                "moved_deleted": len(moved_deleted),
+                "moved_invalid": len(moved_invalid),
+            }
+        )
+
     logger.info("Harvesting beendet")
 
     return failed_download, failed_ids
@@ -603,6 +624,76 @@ def create_id_file(PRM: dict[str, Any], ids: list[str], folder: str, type: str |
         yaml.safe_dump(doc, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
         f.write("ids:\n")
         f.write("\n".join([f"- '{fid}'" for fid in ids]))
+    return file
+
+
+def write_summary_xml(
+    PRM: dict[str, Any],
+    folder: str,
+    stats: dict[str, int],
+    runtime: str,
+) -> str:
+    """Schreibt eine strukturierte XML-Zusammenfassung des Harvesting-Laufs.
+
+    Gedacht für die Weiterverarbeitung z. B. in einer eXist-db: enthält
+    Quellparameter (Base-URL, Prefix, Sets, Zeitraum), Konfiguration
+    (Datengeber, Exportformat, Gentle Mode, Umgang mit gelöschten Records)
+    sowie die Ergebniszahlen des Laufs.
+
+    Args:
+        PRM: Parameters dictionary with harvesting configuration.
+        folder: Output folder in which the summary file is written.
+        stats: Dict with run counts, as populated by harvest_files().
+        runtime: Formatted runtime string (HH:MM:SS.mmm).
+
+    Returns:
+        The path of the written summary XML file.
+    """
+    root = etree.Element("harvestSummary")
+
+    meta = etree.SubElement(root, "meta")
+    etree.SubElement(meta, "ometha", version=__version__)
+    etree.SubElement(meta, "timestamp").text = OAITIMESTR
+    etree.SubElement(meta, "runtime").text = runtime
+
+    source = etree.SubElement(root, "source")
+    etree.SubElement(source, "baseUrl").text = PRM.get("b_url") or ""
+    etree.SubElement(source, "metadataPrefix").text = PRM.get("pref") or ""
+    sets_el = etree.SubElement(source, "sets")
+    sets_prm = PRM.get("sets") or []
+    if sets_prm and isinstance(sets_prm, list):
+        sets_dict = sets_prm[0] if sets_prm else {}
+        for set_spec in sets_dict.get("additive", []):
+            etree.SubElement(sets_el, "set", type="additive").text = set_spec
+        for set_spec in sets_dict.get("intersection", []):
+            etree.SubElement(sets_el, "set", type="intersection").text = set_spec
+    if PRM.get("f_date"):
+        etree.SubElement(source, "fromDate").text = str(PRM["f_date"])
+    if PRM.get("u_date"):
+        etree.SubElement(source, "untilDate").text = str(PRM["u_date"])
+
+    config = etree.SubElement(root, "config")
+    etree.SubElement(config, "datengeber").text = PRM.get("dat_geb") or ""
+    etree.SubElement(config, "exportType").text = PRM.get("exp_type") or ""
+    etree.SubElement(config, "deletedHandling").text = PRM.get("deleted_handling") or "keep"
+    etree.SubElement(config, "gentle").text = "true" if PRM.get("gentle") else "false"
+
+    results = etree.SubElement(root, "results")
+    for key in (
+        "total",
+        "successful",
+        "failed_download",
+        "failed_ids",
+        "skipped_deleted",
+        "moved_deleted",
+        "moved_invalid",
+    ):
+        tag = "".join(part.capitalize() if i else part for i, part in enumerate(key.split("_")))
+        etree.SubElement(results, tag).text = str(stats.get(key, 0))
+
+    file = os.path.join(folder, f"_ometha_{PRM.get('dat_geb', TIMESTR)}_summary.xml")
+    tree = etree.ElementTree(root)
+    tree.write(file, xml_declaration=True, encoding="UTF-8", pretty_print=True)
     return file
 
 
