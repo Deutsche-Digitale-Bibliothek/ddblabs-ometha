@@ -8,7 +8,7 @@ from requests import Session
 from requests.exceptions import ConnectionError, HTTPError, Timeout
 
 from .cli import parse_set_values
-from .helpers import resolve_date
+from .helpers import resolve_date, safe_get
 from .harvester import (
     NAMESPACE,
     PRM,
@@ -186,7 +186,7 @@ def get_sets_mprefs(url: str, session: Session, sets: dict[str, str]) -> None:
         sets: Accumulator dict mapping set name to set spec, shared across recursive calls.
     """
     try:
-        response = session.get(url, verify=False, timeout=(20, 80))
+        response = safe_get(session, url, timeout=(20, 80))
         root = isinvalid_xml_content(response, url, mode="ui")
     except (Timeout, HTTPError, ConnectionError) as e:
         handle_error(e, "ui", url)

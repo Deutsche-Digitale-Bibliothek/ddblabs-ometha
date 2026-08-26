@@ -19,7 +19,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   via a done-callback, instead of only after all identifiers have been
   enqueued
 
-## Added
+
+### Added
 
 - The progress bar now shows a total/ETA again once `completeListSize` is
   known from the first `ListIdentifiers` page, even in pipelined mode
@@ -32,6 +33,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `harvest_files()` accepts an optional `stats` dict, populated in place with
   run counts; existing callers are unaffected since the parameter is optional
   and the return value is unchanged
+
+### Security
+- SSL certificate verification is now enabled by default for all requests
+  (previously hardcoded to `verify=False` everywhere, disabling protection
+  against man-in-the-middle attacks). If a certificate cannot be validated,
+  Ometha logs a warning once and disables verification only for that run,
+  instead of silently skipping verification for every connection from the
+  start
+- Fixed a related gap where `GetRecord` downloads had no explicit certificate
+  handling at all
 
 ## [2.4.0] - 2026-08-06
 

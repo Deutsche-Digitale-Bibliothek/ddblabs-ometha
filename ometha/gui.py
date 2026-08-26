@@ -12,7 +12,7 @@ from lxml import etree
 from nicegui import app, run, ui
 
 from .harvester import get_identifier, harvest_files
-from .helpers import NAMESPACE, TIMESTR
+from .helpers import NAMESPACE, TIMESTR, safe_get
 from ._version import __version__ as omethaversion
 
 
@@ -35,7 +35,7 @@ def _build_session() -> requests.Session:
 
 
 def _fetch_metadata_formats(b_url: str, session) -> list[str]:
-    resp = session.get(f"{b_url}?verb=ListMetadataFormats", verify=False, timeout=(10, 30))
+    resp = safe_get(session, f"{b_url}?verb=ListMetadataFormats", timeout=(10, 30))
     root = etree.XML(resp.content)
     return [el.text for el in root.findall(f".//{NAMESPACE}metadataPrefix") if el.text]
 
@@ -45,7 +45,7 @@ def _fetch_sets(b_url: str, session) -> dict[str, str]:
     sets: dict[str, str] = {}
     url: str | None = f"{b_url}?verb=ListSets"
     while url:
-        resp = session.get(url, verify=False, timeout=(10, 30))
+        resp = safe_get(session, url, timeout=(10, 30))
         root = etree.XML(resp.content)
         if root.find(f".//{NAMESPACE}error") is not None:
             break

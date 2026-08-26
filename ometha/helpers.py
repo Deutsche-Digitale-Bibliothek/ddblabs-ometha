@@ -8,7 +8,7 @@ from colorama import Fore, Style
 from loguru import logger
 from lxml import etree
 from requests import Response
-from requests.exceptions import ConnectionError, HTTPError, RetryError, Timeout
+from requests.exceptions import ConnectionError, HTTPError, RetryError, SSLError, Timeout
 
 # Defaults für den --gentle Modus (überschreibbar durch explizite Parameter)
 GENTLE_DEFAULTS = {
@@ -178,6 +178,39 @@ def log_critical_and_print_and_exit(
     if mode == "ui":
         input(f"{message}\nDrücken Sie Enter zum Beenden...")
     sys.exit()
+
+
+def safe_get(session, url: str, **kwargs) -> Response:
+    """Führt session.get() mit gültiger SSL-Zertifikatsprüfung durch.
+
+    Schlägt die Prüfung fehl (z. B. selbstsigniertes oder abgelaufenes
+    Zertifikat), wird das einmalig geloggt und die Zertifikatsprüfung für
+    den Rest des Laufs auf dieser Session deaktiviert, statt den Lauf
+    abzubrechen. Betroffene Schnittstellen tauchen so im Log auf, ohne
+    dass Nutzer:innen den Harvest manuell neu mit einem Unsicher-Flag
+    starten müssen.
+
+    Args:
+        session: Die zu verwendende requests.Session.
+        url: Die anzufragende URL.
+        **kwargs: Weitere an session.get() durchgereichte Argumente
+            (z. B. timeout). ``verify`` darf hier NICHT gesetzt werden,
+            das übernimmt diese Funktion.
+
+    Returns:
+        Das requests.Response-Objekt.
+    """
+    try:
+        return session.get(url, **kwargs)
+    except SSLError as e:
+        if session.verify is not False:
+            logger.warning(f"SSL-Zertifikatsprüfung fehlgeschlagen für {url}: {e}")
+            print(
+                f"{ACHTUNG}SSL-Zertifikat der Schnittstelle konnte nicht validiert werden "
+                f"({url}). Zertifikatsprüfung wird für diesen Lauf deaktiviert."
+            )
+            session.verify = False
+        return session.get(url, **kwargs)
 
 
 def isinvalid_xml_content(response: Response, url: str, mode: str) -> etree._Element:

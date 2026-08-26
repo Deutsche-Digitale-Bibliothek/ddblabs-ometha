@@ -38,6 +38,7 @@ from .helpers import (
     configure_logging,
     log_critical_and_print_and_exit,
     print_and_log,
+    safe_get,
 )
 from .tui import interactiveMode
 
@@ -248,7 +249,7 @@ def start_process() -> None:
     try:
         # try baseurl
         with yaspin(Spinners.dots, text=f"Checking if {PRM['b_url']} is accessible"):
-            session.get(PRM["b_url"], verify=False, timeout=(20, 80))
+            safe_get(session, PRM["b_url"], timeout=(20, 80))
     except (
         requests.exceptions.HTTPError,
         requests.exceptions.RetryError,
@@ -261,7 +262,7 @@ def start_process() -> None:
                 Spinners.dots,
                 text=f"Checking if {PRM['b_url']}?verb=Identify is accessible",
             ):
-                session.get(PRM["b_url"] + "?verb=Identify", verify=False, timeout=(20, 80))
+                safe_get(session, PRM["b_url"] + "?verb=Identify", timeout=(20, 80))
         except (
             requests.exceptions.HTTPError,
             requests.exceptions.RetryError,
