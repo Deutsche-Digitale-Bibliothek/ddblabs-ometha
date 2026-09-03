@@ -49,7 +49,7 @@ def parseargs() -> dict[str, Any]:
         s.add_argument(
             "--batchsize",
             type=int,
-            help="Number of files per subfolder (default: 10000)",
+            help="Number of files per subfolder (default: 100000)",
             default=None,
             dest="batch_size",
         )
@@ -265,7 +265,7 @@ def parseargs() -> dict[str, Any]:
         PRM["out_f"] = os.path.expanduser(read_yaml_file(PRM["conf_f"], ["outputfolder"], os.getcwd())[0] or os.getcwd())
         # n_procs: read from config file, None means auto-scale based on ID count
         PRM["n_procs"] = read_yaml_file(PRM["conf_f"], ["numberofprocesses"])[0]
-        # batch_size: read from config file, None means default (10000)
+        # batch_size: read from config file, None means default (100000)
         PRM["batch_size"] = read_yaml_file(PRM["conf_f"], ["batchsize"])[0]
         # max_timeout: read from config file, None means default (120s)
         PRM["max_timeout"] = read_yaml_file(PRM["conf_f"], ["maxtimeout"])[0]

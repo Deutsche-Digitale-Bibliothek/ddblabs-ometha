@@ -241,9 +241,9 @@ def harvest_files(
 
         Teilt die Downloads in Unterordner à batch_size Dateien auf,
         z.B. part_0001, part_0002 usw. batch_size wird aus PRM["batch_size"]
-        gelesen, default 10.000.
+        gelesen, default 100.000.
         """
-        batch_size = int(PRM["batch_size"]) if PRM.get("batch_size") else 10_000
+        batch_size = int(PRM["batch_size"]) if PRM.get("batch_size") else 100_000
         batch_num = index // batch_size + 1
         subfolder = os.path.join(base_folder, f"part_{batch_num:04d}")
         os.makedirs(subfolder, exist_ok=True)

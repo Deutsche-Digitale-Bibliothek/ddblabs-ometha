@@ -49,7 +49,7 @@ PRM = {
     "out_f": None,  # outputfile: path
     "n_procs": None,  # number of parallel downloads: int
     "max_timeout": None,  # hard ceiling for adaptive timeout in seconds: int
-    "batch_size": None,  # files per subfolder: int (default 10000)
+    "batch_size": None,  # files per subfolder: int (default 100000)
     "mode": None,  # mode: str "ui" or "cli"
     "exp_type": None,  # export type either "xml" or "json"
     "gentle": False,  # gentle mode: conservative defaults for sensitive endpoints
