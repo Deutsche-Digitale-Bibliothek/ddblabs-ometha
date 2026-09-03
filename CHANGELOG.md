@@ -5,19 +5,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 ---
-## [2.5.0] - 2026-XX-XX
+## [2.5.1] - 2026-09-XX
+
+### Changed
+
+- default value for `--batchsize` parameter has been increased to 100,000.
+
+## [2.5.0] - 2026-08-26
 
 ### Fixed
 - Fixed a crash (`UnboundLocalError`) that occurred when a harvesting run
   hit an invalid/empty XML response and the user pressed Enter without
   typing a character at the "Drücken Sie Enter zum Beenden" prompt;
   `log_critical_and_print_and_exit` now always exits as its name promises,
-  regardless of the exact input given
+  regardless of the exact input given.
 - The progress bar showed zero movement for the entire identifier-listing
   phase of a harvest, even though downloads were already running in the
   background; progress now updates immediately as each download completes
   via a done-callback, instead of only after all identifiers have been
-  enqueued
+  enqueued.
 
 
 ### Added
@@ -32,7 +38,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   ingestion into eXist-db or similar XML-native systems.
 - `harvest_files()` accepts an optional `stats` dict, populated in place with
   run counts; existing callers are unaffected since the parameter is optional
-  and the return value is unchanged
+  and the return value is unchanged.
 
 ### Security
 - SSL certificate verification is now enabled by default for all requests
@@ -40,9 +46,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   against man-in-the-middle attacks). If a certificate cannot be validated,
   Ometha logs a warning once and disables verification only for that run,
   instead of silently skipping verification for every connection from the
-  start
+  start.
 - Fixed a related gap where `GetRecord` downloads had no explicit certificate
-  handling at all
+  handling at all.
 
 ## [2.4.0] - 2026-08-06
 
@@ -56,16 +62,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   collected upfront (and written to the ID file) before downloads start,
   instead of streaming identifiers into the worker pool as they arrive.
   This avoids running ListIdentifiers and GetRecord requests concurrently
-  against endpoints that are already being treated conservatively
+  against endpoints that are already being treated conservatively.
 - Refactored `collect_ids()` out of `start_process()` into a standalone,
-  testable function
+  testable function.
 
 ### Fixed
 - Output folder paths starting with `~` are now correctly expanded to the
   user's home directory instead of creating a literal `~` subfolder
 - Ometha crashed with `TypeError: divmod expected 2 arguments, got 3` after
   completing a harvesting run; runtime is now calculated correctly using two
-  nested `divmod` calls
+  nested `divmod` calls.
 
 ## [2.3.0] - 2026-07-31
 
@@ -75,7 +81,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - `keep` (default): records are saved normally, preserving existing behavior
   - `skip`: records are discarded and only logged
   - `folder`: records are moved to a `_deleted/` subfolder in the output directory
-  Available in all modes: CLI, TUI, GUI, and YAML config
+  Available in all modes: CLI, TUI, GUI, and YAML config.
 - Records without a grandchild node under `//metadata` (e.g. empty metadata,
   HTML fragments) are automatically moved to an `_invalid/` subfolder and logged
   as a warning. This check runs after the deleted-record check, so deleted records
@@ -87,37 +93,37 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   and `--ratelimit`
 - New `--ratelimit` parameter (seconds between requests) usable independently
   of `--gentle`; enforced globally across all worker threads via a shared lock,
-  so the interval is respected regardless of parallelization level
+  so the interval is respected regardless of parallelization level.
 
 ### Changed
 - `harvest_files` logs a summary of skipped/moved deleted records at the end of each run
 - TUI: gentle mode is now prompted before parallel downloads, preventing users
   from entering a thread count that would immediately be overridden by the
-  gentle mode default
+  gentle mode default.
 - Harvesting now uses a producer-consumer pipeline: `GetRecord` downloads start
   after the first `ListIdentifiers` page instead of waiting for all identifiers
   to be collected first, significantly reducing time-to-first-download on large
-  repositories
+  repositories.
 - `get_identifier` is now a thin wrapper around the new `get_identifier_pages`
   generator, which yields one page of identifiers at a time; existing callers
-  (GUI, ID-file mode) are unaffected
+  (GUI, ID-file mode) are unaffected.
 - Intersection sets still collect all identifiers upfront (required for the
   cross-set deduplication), multiple additive sets collect and deduplicate
-  before harvesting; single set and no-set cases benefit fully from pipelining
+  before harvesting; single set and no-set cases benefit fully from pipelining.
 
 ### Fixed
-- `test_oai_mock`: `harvest_files` tests now use the mocked session instead of a bare `requests.Session()`, fixing tests that silently produced no output
-- `test_oai_mock`: file assertions now use `rglob` to find files in `part_*/` subfolders created by `harvest_files`
-- `test_oai_mock`: date value assertions account for `yaml.safe_dump` quoting strings as `'2025-01-01'`
-- `test_oai_mock`: resumption token file search now uses `.yaml` extension instead of `.txt`
-- `test_cli`: default timeout updated from `0` to `20`; added `batchsize` tests for all subcommands
-- `test_tui`: all input sequences updated to include `batchsize` prompt after `n_procs`
+- `test_oai_mock`: `harvest_files` tests now use the mocked session instead of a bare `requests.Session()`, fixing tests that silently produced no output.
+- `test_oai_mock`: file assertions now use `rglob` to find files in `part_*/` subfolders created by `harvest_files`.
+- `test_oai_mock`: date value assertions account for `yaml.safe_dump` quoting strings as `'2025-01-01'`.
+- `test_oai_mock`: resumption token file search now uses `.yaml` extension instead of `.txt`.
+- `test_cli`: default timeout updated from `0` to `20`; added `batchsize` tests for all subcommands.
+- `test_tui`: all input sequences updated to include `batchsize` prompt after `n_procs`.
 - GUI: when multiple sets were selected, only the first set was harvested;
   each set is now collected in a separate ListIdentifiers run and the results
-  are merged and deduplicated
+  are merged and deduplicated.
 - GUI: on Windows, the colon in the drive letter (e.g. `C:`) was replaced
   by `_` when building the output folder path; only the timestamp portion
-  is now sanitized
+  is now sanitized.
 
 ---
 
