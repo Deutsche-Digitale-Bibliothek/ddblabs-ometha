@@ -116,6 +116,32 @@ def write_checkpoint_yaml(token: str, id_count: int, PRM: dict, label: str = "La
     return token_file
 
 
+def preview_list_size(url: str, session: Session) -> int | None:
+    """Fragt die completeListSize für eine ListIdentifiers-URL ab, ohne zu paginieren.
+
+    Für eine Vorschau vor dem eigentlichen Harvesting-Start (z. B. im GUI-Modus),
+    damit Nutzer:innen sehen können, wie viele Records ihre aktuelle Auswahl
+    (Sets, Zeitraum) ergibt, bevor sie den Lauf tatsächlich starten.
+
+    Args:
+        url: Vollständige ListIdentifiers-URL (inkl. metadataPrefix, ggf. set/from/until).
+        session: HTTP session to use for the request.
+
+    Returns:
+        Die completeListSize als int, oder None wenn die Schnittstelle sie nicht
+        angibt (laut OAI-PMH-Spec optional) oder der Request fehlschlägt.
+    """
+    try:
+        response = safe_get(session, url, timeout=(20, 60))
+        response.raise_for_status()
+        etree.XML(response.content)  # nur Validität prüfen, root wird nicht gebraucht
+    except Exception as e:
+        logger.warning(f"ListSize-Vorschau fehlgeschlagen für {url}: {e}")
+        return None
+    list_size = re.search(r"completeListSize=[\"|\'](\d+)[\"|\']", response.text)
+    return int(list_size.group(1)) if list_size else None
+
+
 def get_identifier_pages(
     PRM: dict[str, Any],
     url: str,
