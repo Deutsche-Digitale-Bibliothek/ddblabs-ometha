@@ -11,7 +11,7 @@ import urllib3
 from lxml import etree
 from nicegui import app, run, ui
 
-from .harvester import get_identifier, harvest_files
+from .harvester import get_identifier, harvest_files, preview_list_size
 from .helpers import NAMESPACE, TIMESTR, safe_get
 from ._version import __version__ as omethaversion
 
@@ -132,6 +132,11 @@ def index():
                     "Mindestabstand zwischen Requests in Sekunden. 0 = kein Limit."
                 )
 
+        # ListSize-Vorschau
+        with ui.row().classes("w-full items-center gap-2"):
+            listsize_btn = ui.button("ListSize prüfen", icon="query_stats").props("outline")
+            listsize_label = ui.label("").classes("text-gray-500 text-sm")
+
         # Fehleranzeige
         error_banner = ui.label("").classes("text-red-600 font-medium hidden")
 
@@ -192,6 +197,48 @@ def index():
             fetch_status.set_text(f"Fehler beim Laden: {e}")
         finally:
             fetch_btn.enable()
+
+    async def check_list_size():
+        url = b_url.value.strip().rstrip("/")
+        prefix = pref.value if isinstance(pref.value, str) else str(pref.value or "")
+        if not url or not prefix:
+            listsize_label.set_text("Base-URL und Metadata Prefix ausfüllen")
+            return
+        listsize_label.set_text("Prüfe ListSize …")
+        listsize_btn.disable()
+        try:
+            session = _build_session()
+
+            base_url = f"{url}?verb=ListIdentifiers&metadataPrefix={prefix}"
+            if f_date.value.strip():
+                base_url += f"&from={f_date.value.strip()}"
+            if u_date.value.strip():
+                base_url += f"&until={u_date.value.strip()}"
+
+            selected_sets = list(sets_select.value or [])
+            if selected_sets:
+                sizes = await asyncio.gather(
+                    *[
+                        run.io_bound(preview_list_size, f"{base_url}&set={s}", session)
+                        for s in selected_sets
+                    ]
+                )
+                if any(size is None for size in sizes):
+                    known_sum = sum(size for size in sizes if size is not None)
+                    unknown_count = sum(1 for size in sizes if size is None)
+                    known_sum_str = f"{known_sum:,}".replace(",", ".")
+                    listsize_label.set_text(
+                        f"≥ {known_sum_str} Records ({unknown_count} von {len(selected_sets)} Sets ohne Angabe, als 0 gezählt)"
+                    )
+                else:
+                    listsize_label.set_text(f"≈ {sum(sizes):,} Records (Summe über {len(selected_sets)} Sets)".replace(",", "."))
+            else:
+                size = await run.io_bound(preview_list_size, base_url, session)
+                listsize_label.set_text(f"≈ {size:,} Records".replace(",", ".") if size is not None else "ListSize nicht angegeben")
+        except Exception as e:
+            listsize_label.set_text(f"Fehler bei der Abfrage: {e}")
+        finally:
+            listsize_btn.enable()
 
     async def pick_folder():
         def _dialog():
@@ -327,6 +374,7 @@ def index():
 
     b_url.on("blur", fetch_endpoint_info)
     fetch_btn.on("click", fetch_endpoint_info)
+    listsize_btn.on_click(check_list_size)
     start_btn.on_click(start_harvesting)
 
 

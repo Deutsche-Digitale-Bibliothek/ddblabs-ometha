@@ -5,7 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 ---
-## [2.5.1] - 2026-09-XX
+## [2.5.1] - 2026-09-16
+
+### Added
+- GUI: new "ListSize prüfen" button shows the expected number of records
+  for the current base URL, prefix, sets, and date range before starting
+  a harvest. With multiple sets selected, sizes are summed; sets that don't
+  report a `completeListSize` (optional per the OAI-PMH spec) are counted
+  as 0 and the result is shown as a lower bound (`≥`) with a note on how
+  many sets were missing a count
 
 ### Changed
 
