@@ -101,7 +101,7 @@ def write_checkpoint_yaml(token: str, id_count: int, PRM: dict, label: str = "La
         Pfad der geschriebenen Datei.
     """
     is_abort = "Abbruch" in label
-    filename = f"resumption_token_{TIMESTR}.yaml" if is_abort else "resumption_token_latest.yaml"
+    filename = f"resumption_token_{TIMESTR}.yaml" if is_abort else f"resumption_token_latest_{TIMESTR}.yaml"
     token_file = os.path.join(PRM.get("out_f", "."), filename)
 
     doc = {

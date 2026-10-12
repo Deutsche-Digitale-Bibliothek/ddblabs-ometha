@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 ---
+
+## [2.5.2] - 2026-10-12
+
+### Fixed
+
+- Checkpoint file `resumption_token_latest.yaml` no longer gets overwritten by a subsequent harvest in the same output folder; its name now includes the run timestamp (`resumption_token_latest_<timestamp>.yaml`).
+- Gentle mode was impossible to call via `--conf mode`. It can now be done via `gentle: true|false` parameter and CLI.
+
 ## [2.5.1] - 2026-09-16
 
 ### Added

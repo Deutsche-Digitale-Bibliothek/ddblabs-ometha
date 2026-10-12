@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from oai_mock import OAIMock, OAIRecord
 from ometha.harvester import get_identifier, get_identifier_pages
-from ometha.helpers import isinvalid_xml_content, NAMESPACE
+from ometha.helpers import isinvalid_xml_content, safe_get, NAMESPACE
 
 BASE_URL = "http://mock-oai.test/oai"
 
@@ -2151,3 +2151,186 @@ class TestWriteSummaryXml:
         path = write_summary_xml(prm, str(tmp_path), self._stats(), "00:01:23.456")
         root = etree.parse(path).getroot()
         assert root.findtext("source/baseUrl") == "http://example.org/oai?a=1&b=2"
+
+
+# ---------------------------------------------------------------------------
+# safe_get: SSL-Zertifikatsprüfung mit geloggtem Fallback
+# ---------------------------------------------------------------------------
+
+
+class TestSafeGet:
+    """safe_get() prüft standardmäßig SSL-Zertifikate, loggt aber statt zu
+    crashen, wenn die Prüfung fehlschlägt, und deaktiviert sie nur dann
+    für den Rest des Laufs."""
+
+    def test_successful_request_returns_response_unchanged(self):
+        """Ohne SSL-Fehler muss safe_get sich wie ein normaler session.get() verhalten."""
+        from unittest.mock import MagicMock
+
+        session = MagicMock()
+        session.verify = True
+        session.get.return_value = "response"
+
+        result = safe_get(session, "https://good-cert.example.org/oai", timeout=(10, 30))
+
+        assert result == "response"
+        session.get.assert_called_once_with("https://good-cert.example.org/oai", timeout=(10, 30))
+
+    def test_verify_stays_true_when_no_ssl_error(self):
+        """session.verify darf nicht angefasst werden, solange kein SSL-Fehler auftritt."""
+        from unittest.mock import MagicMock
+
+        session = MagicMock()
+        session.verify = True
+        session.get.return_value = "response"
+
+        safe_get(session, "https://good-cert.example.org/oai")
+
+        assert session.verify is True
+
+    def test_ssl_error_disables_verify_and_retries(self):
+        """Bei SSLError muss session.verify auf False gesetzt und der Request wiederholt werden."""
+        from unittest.mock import MagicMock
+        from requests.exceptions import SSLError
+
+        session = MagicMock()
+        session.verify = True
+        session.get.side_effect = [SSLError("certificate verify failed"), "response after fallback"]
+
+        result = safe_get(session, "https://bad-cert.example.org/oai")
+
+        assert result == "response after fallback"
+        assert session.verify is False
+        assert session.get.call_count == 2
+
+    def test_ssl_error_logs_warning(self):
+        """Bei SSLError muss eine Warnung mit der betroffenen URL geloggt werden."""
+        from unittest.mock import MagicMock, patch
+        from requests.exceptions import SSLError
+
+        session = MagicMock()
+        session.verify = True
+        session.get.side_effect = [SSLError("certificate verify failed"), "ok"]
+
+        with patch("ometha.helpers.logger") as mock_logger:
+            safe_get(session, "https://bad-cert.example.org/oai")
+
+        mock_logger.warning.assert_called_once()
+        warning_message = mock_logger.warning.call_args[0][0]
+        assert "https://bad-cert.example.org/oai" in warning_message
+
+    def test_second_call_does_not_retry_again(self):
+        """Nachdem verify einmal auf False gesetzt wurde, darf ein erneuter SSL-Fehler
+        (der dann eigentlich nicht mehr auftreten sollte) nicht zu einer Endlosschleife
+        oder einem dritten Aufruf führen, wenn der zweite Call bereits erfolgreich ist."""
+        from unittest.mock import MagicMock
+        from requests.exceptions import SSLError
+
+        session = MagicMock()
+        session.verify = True
+        session.get.side_effect = [SSLError("certificate verify failed"), "ok"]
+
+        safe_get(session, "https://bad-cert.example.org/oai")
+        assert session.get.call_count == 2
+
+        # Zweiter Aufruf über dieselbe Session: verify ist jetzt False,
+        # darf also gar nicht erst in den except-Zweig laufen.
+        session.get.reset_mock()  # call_count wird von MagicMock kumulativ gezählt
+        session.get.side_effect = ["ok again"]
+        result = safe_get(session, "https://bad-cert.example.org/oai?verb=GetRecord")
+        assert result == "ok again"
+        assert session.get.call_count == 1
+
+    def test_verify_already_false_does_not_warn_again(self):
+        """Wenn verify schon False ist (z. B. von einem früheren Fallback), soll bei
+        einem erneuten SSLError nicht nochmal gewarnt werden – nur weiterversucht."""
+        from unittest.mock import MagicMock
+        from requests.exceptions import SSLError
+
+        session = MagicMock()
+        session.verify = False  # bereits deaktiviert
+        session.get.side_effect = [SSLError("still failing somehow"), "ok"]
+
+        result = safe_get(session, "https://bad-cert.example.org/oai")
+
+        assert result == "ok"
+        assert session.verify is False
+
+    def test_kwargs_passed_through_on_both_attempts(self):
+        """timeout und andere kwargs müssen bei beiden Versuchen (vor und nach
+        dem Fallback) korrekt durchgereicht werden."""
+        from unittest.mock import MagicMock
+        from requests.exceptions import SSLError
+
+        session = MagicMock()
+        session.verify = True
+        session.get.side_effect = [SSLError("cert error"), "ok"]
+
+        safe_get(session, "https://bad-cert.example.org/oai", timeout=(20, 80))
+
+        for call in session.get.call_args_list:
+            assert call.kwargs.get("timeout") == (20, 80)
+
+
+class TestSafeGetIntegration:
+    """Integrationstest: safe_get im echten Harvesting-Flow gegen den Mock,
+    wenn keine SSL-Probleme auftreten (Normalfall)."""
+
+    def test_get_identifier_pages_uses_safe_get_successfully(self, requests_mock, prm_base, session):
+        """Ohne SSL-Probleme muss get_identifier_pages weiterhin normal funktionieren,
+        jetzt über safe_get statt eines direkten session.get()-Aufrufs."""
+        mock = OAIMock.with_dc_records(3)
+        mock.register(requests_mock)
+        url = f"{mock.base_url}?verb=ListIdentifiers&metadataPrefix=oai_dc"
+
+        pages = list(get_identifier_pages(prm_base, url, session))
+        all_ids = [id for page in pages for id in page]
+        assert len(all_ids) == 3
+
+    def test_harvest_files_uses_safe_get_successfully(self, requests_mock, prm_base, tmp_path, session):
+        """Ohne SSL-Probleme muss harvest_files weiterhin normal funktionieren,
+        jetzt über safe_get statt eines direkten session.get()-Aufrufs."""
+        from ometha.harvester import harvest_files
+
+        records = [OAIRecord("oai:mock:safeget001")]
+        OAIMock(records=records).register(requests_mock)
+
+        prm = {**prm_base, "out_f": str(tmp_path)}
+        failed_dl, failed_ids = harvest_files(["oai:mock:safeget001"], prm, str(tmp_path), session=session)
+
+        assert failed_dl == []
+        assert failed_ids == []
+        assert len(list(tmp_path.rglob("*.xml"))) == 1
+
+
+class TestCheckpointFilename:
+    """Regression: Checkpoint-Dateien dürfen sich bei mehreren Läufen im
+    selben Ausgabeordner nicht gegenseitig überschreiben."""
+
+    def test_laufender_checkpoint_enthaelt_timestamp(self, tmp_path):
+        from ometha.harvester import write_checkpoint_yaml
+        from ometha.helpers import TIMESTR
+
+        path = write_checkpoint_yaml("tok", 10, {"out_f": str(tmp_path)})
+        assert os.path.basename(path) == f"resumption_token_latest_{TIMESTR}.yaml"
+
+    def test_zwei_laeufe_ueberschreiben_sich_nicht(self, tmp_path):
+        from unittest.mock import patch
+        from ometha.harvester import write_checkpoint_yaml
+
+        with patch("ometha.harvester.TIMESTR", "2025-01-01_10_00_00Z"):
+            p1 = write_checkpoint_yaml("tokA", 1, {"out_f": str(tmp_path)})
+        with patch("ometha.harvester.TIMESTR", "2025-01-01_11_00_00Z"):
+            p2 = write_checkpoint_yaml("tokB", 2, {"out_f": str(tmp_path)})
+
+        assert p1 != p2
+        assert "tokA" in open(p1, encoding="utf-8").read()
+        assert "tokB" in open(p2, encoding="utf-8").read()
+
+    def test_innerhalb_eines_laufs_wird_derselbe_checkpoint_aktualisiert(self, tmp_path):
+        from ometha.harvester import write_checkpoint_yaml
+
+        p1 = write_checkpoint_yaml("tok1", 1000, {"out_f": str(tmp_path)})
+        p2 = write_checkpoint_yaml("tok2", 2000, {"out_f": str(tmp_path)})
+        assert p1 == p2
+        assert "tok2" in open(p2, encoding="utf-8").read()

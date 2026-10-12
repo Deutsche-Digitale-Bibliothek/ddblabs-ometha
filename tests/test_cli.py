@@ -1101,3 +1101,52 @@ class TestIdsCommand:
     def test_ratelimit_default_is_none(self):
         prm = self._parse_ids()
         assert prm["ratelimit"] is None
+
+
+class TestConfGentleMode:
+    """Gentle Mode im conf-Modus: YAML-Key und --gentle-Flag, YAML hat Vorrang."""
+
+    def _parse_conf(self, yaml_extra=None, extra_argv=None):
+        data = {**YAML_CONF_MINIMAL, "timeout": None, **(yaml_extra or {})}
+
+        def mock_read_yaml(path, keys, default=None):
+            return [data.get(k, default) for k in keys]
+
+        argv = ["conf", "-c", "config.yaml"] + (extra_argv or [])
+        with patch("ometha.cli.read_yaml_file", side_effect=mock_read_yaml):
+            return parse_with(argv)
+
+    def test_default_not_gentle(self):
+        prm = self._parse_conf()
+        assert prm["gentle"] is False
+        assert prm["ratelimit"] is None
+
+    def test_yaml_gentle_true_sets_defaults(self):
+        prm = self._parse_conf({"gentle": True})
+        assert prm["gentle"] is True
+        assert prm["n_procs"] == 1
+        assert prm["timeout"] == 30
+        assert prm["ratelimit"] == 20
+
+    def test_cli_flag_enables_gentle(self):
+        prm = self._parse_conf(extra_argv=["--gentle"])
+        assert prm["gentle"] is True
+        assert prm["n_procs"] == 1
+        assert prm["ratelimit"] == 20
+
+    def test_yaml_false_overrides_cli_flag(self):
+        prm = self._parse_conf({"gentle": False}, extra_argv=["--gentle"])
+        assert prm["gentle"] is False
+        assert prm["ratelimit"] is None
+
+    def test_yaml_true_without_cli_flag(self):
+        prm = self._parse_conf({"gentle": True}, extra_argv=[])
+        assert prm["gentle"] is True
+
+    def test_explicit_yaml_values_override_gentle_defaults(self):
+        prm = self._parse_conf(
+            {"gentle": True, "numberofprocesses": 3, "timeout": 60, "ratelimit": 5}
+        )
+        assert prm["n_procs"] == 3
+        assert prm["timeout"] == 60
+        assert prm["ratelimit"] == 5

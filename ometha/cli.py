@@ -179,6 +179,13 @@ def parseargs() -> dict[str, Any]:
                 help="Kein Logfile anlegen (sinnvoll für Cron-Betrieb mit externem Logging).",
             )
             prs.add_argument(
+                "--gentle",
+                dest="gentle",
+                action="store_true",
+                default=False,
+                help="Conservative mode (see default command). A 'gentle' key in the YAML file takes precedence.",
+            )
+            prs.add_argument(
                 "--cleanup-on-empty",
                 dest="cleanup_empty",
                 action="store_true",
@@ -273,6 +280,14 @@ def parseargs() -> dict[str, Any]:
         PRM["deleted_handling"] = read_yaml_file(PRM["conf_f"], ["deleted"])[0] or "keep"
         # ratelimit: read from config file
         PRM["ratelimit"] = read_yaml_file(PRM["conf_f"], ["ratelimit"])[0]
+        # gentle: YAML-Wert hat Vorrang vor dem CLI-Flag; fehlende Werte werden mit GENTLE_DEFAULTS gefüllt
+        from .helpers import GENTLE_DEFAULTS
+        gentle_yaml = read_yaml_file(PRM["conf_f"], ["gentle"])[0]
+        PRM["gentle"] = bool(gentle_yaml) if gentle_yaml is not None else args.gentle
+        if PRM["gentle"]:
+            for key, default_key in (("n_procs", "n_procs"), ("timeout", "timeout"), ("ratelimit", "ratelimit")):
+                if PRM[key] is None:
+                    PRM[key] = GENTLE_DEFAULTS[default_key]
         # resumptiontoken: gesetzt wenn Checkpoint-YAML verwendet wird
         PRM["res_tok"] = read_yaml_file(PRM["conf_f"], ["resumptiontoken"])[0]
         # Clean up base URL and prefix if they are not None

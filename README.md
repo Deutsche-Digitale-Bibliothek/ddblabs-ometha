@@ -313,7 +313,7 @@ optional arguments:
 
 ## Errorhandling: Abbruch beim Harvesten der OAI-Identifier
 
-Während des ID-Harvestings speichert Ometha automatisch alle 1000 IDs einen Checkpoint: Die aktuelle `resumptionToken` wird in `resumption_token_latest.txt` im Ausgabeordner geschrieben. Bei einem Verbindungsabbruch wird zusätzlich eine zeitgestempelte Datei `resumption_token_<timestamp>.txt` angelegt.
+Während des ID-Harvestings speichert Ometha automatisch alle 1000 IDs einen Checkpoint: Die aktuelle `resumptionToken` wird in `resumption_token_latest_<timestamp>.yaml` im Ausgabeordner geschrieben. Bei einem Verbindungsabbruch wird zusätzlich eine zeitgestempelte Datei `resumption_token_<timestamp>.yaml` angelegt.
 
 Falls beim Harvesten der OAI-IDs etwas schief geht, reicht es, sich den letzten angezeigten Resumption-Token zu notieren (bzw. in der Checkpoint-Datei oder Log-Datei zu schauen) und Ometha dann mit dem zusätzlichen Parameter `--resumptiontoken=resumptiontoken` auszuführen bzw. beim interaktiven Modus die Option `[R]` zu wählen:
 
@@ -361,6 +361,21 @@ In der YAML-Konfigurationsdatei:
 ```yaml
 ratelimit: 10
 ```
+
+Auch im `conf`-Modus lässt sich der Gentle Mode aktivieren, entweder per Flag oder per YAML-Key:
+
+```shell
+ometha conf -c config.yaml --gentle
+```
+
+```yaml
+gentle: true
+# optional: einzelne Defaults überschreiben
+numberofprocesses: 2
+ratelimit: 5
+```
+
+Steht `gentle` in der YAML-Datei, hat dieser Wert Vorrang vor dem CLI-Flag (`gentle: false` schaltet den Modus also auch bei `--gentle` aus). Explizit gesetzte Werte (`numberofprocesses`, `timeout`, `ratelimit`) überschreiben die Gentle-Defaults.
 
 ## Gelöschte Records
 
