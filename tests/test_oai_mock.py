@@ -2511,3 +2511,14 @@ class TestStartProcess:
         folder = self._run(requests_mock, tmp_path, monkeypatch, summary=True)
 
         assert (folder / "_ometha_mock_summary.xml").exists()
+
+
+class TestPrintAndLog:
+    def test_end_wird_respektiert(self, capsys):
+        """print(message, end) hat end als zweites Argument gedruckt ("msg \\n")."""
+        from loguru import logger
+
+        from ometha.helpers import print_and_log
+
+        print_and_log("abc", logger, "info", end="")
+        assert capsys.readouterr().out == "abc"

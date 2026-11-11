@@ -247,9 +247,9 @@ def get_identifier_pages(
             first_page = False
             list_size = re.search(r"completeListSize=[\"|\'](\d+)[\"|\']", response.text)
             print_and_log(
-                f"{INFO}Angegebene ListSize: {list_size.group(1)}",
-                logger, "info", end="",
-            ) if list_size else print("Keine ListSize angegeben")
+                f"{INFO}Angegebene ListSize: {list_size.group(1)}" if list_size else f"{INFO}Keine ListSize angegeben",
+                logger, "info",
+            )
             if list_size and on_list_size:
                 on_list_size(int(list_size.group(1)))
 
@@ -584,7 +584,7 @@ def harvest_files(
     # tqdm außen: der Executor wartet beim Verlassen auf alle Downloads,
     # erst danach wird der Fortschrittsbalken geschlossen.
     with (
-        tqdm(total=initial_total, desc="Harveste...", unit="files", dynamic_ncols=True) as pbar,
+        tqdm(total=initial_total, desc="Harveste...", unit=" files", dynamic_ncols=True) as pbar,
         ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor,
     ):
 

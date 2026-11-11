@@ -8,6 +8,7 @@ from colorama import Fore, Style
 from loguru import logger
 from lxml import etree
 from requests import Response
+from tqdm import tqdm
 from requests.exceptions import ConnectionError, HTTPError, RetryError, SSLError, Timeout
 
 # Defaults für den --gentle Modus (überschreibbar durch explizite Parameter)
@@ -119,7 +120,9 @@ def print_and_log(message: str, logger: Any, type: str, end: str = "\n") -> None
         type: Log level — either ``"info"`` or ``"warning"``.
         end: String appended after the printed message. Defaults to newline.
     """
-    print(message, end)
+    # tqdm.write statt print: hält laufende Fortschrittsbalken (auch aus anderen
+    # Threads, z. B. Pipelining) intakt, statt Text an die Balkenzeile zu hängen
+    tqdm.write(message, end=end)
     for placeholder in [SEP_LINE, ACHTUNG, INFO, FEHLER]:
         if placeholder in message:
             message = message.replace(placeholder, "")
