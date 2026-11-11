@@ -21,8 +21,8 @@ from ._version import __version__
 from .cli import parseargs
 from .harvester import (
     change_date,
+    _split_sets,
     create_id_file,
-    get_identifier,
     get_identifier_pages,
     harvest_files,
     read_yaml_file,
@@ -43,13 +43,16 @@ from .helpers import (
 from .tui import interactiveMode
 
 
-def assert_status_hook(response, *args, **kwargs):
-    """Response hook that raises an HTTPError for 4xx/5xx status codes.
+def default_n_procs(PRM: dict, n_ids: int | None) -> int:
+    """Anzahl paralleler Downloads: expliziter Wert (max. 100), sonst anhand der
+    ID-Anzahl skaliert (max. 16). Bei Pipelining ist die Anzahl unbekannt → 16."""
+    if PRM["n_procs"] is not None:
+        return min(int(PRM["n_procs"]), 100)
+    return 16 if n_ids is None else min(int(2 * n_ids / 300 + 4), 16)
 
-    Defined at module level (not inside start_process) so it can be
-    pickled when the session is passed across process/thread boundaries.
-    """
-    response.raise_for_status()
+
+def _has_time(d) -> bool:
+    return bool(d) and "T" in str(d)
 
 
 def generate_id_harvesting_url(
@@ -78,13 +81,12 @@ def generate_id_harvesting_url(
     # hochstufen; enthält keiner eine Uhrzeit, beide auf Datums-Granularität
     # (YYYY-MM-DD) kürzen.
     f, u = PRM.get("f_date"), PRM.get("u_date")
-    has_time = lambda d: d and "T" in str(d)
     if f or u:
-        if has_time(f) or has_time(u):
+        if _has_time(f) or _has_time(u):
             # Datum ohne Zeit → Mitternacht UTC anhängen
-            if f and not has_time(f):
+            if f and not _has_time(f):
                 PRM["f_date"] = f"{f}T00:00:00Z"
-            if u and not has_time(u):
+            if u and not _has_time(u):
                 PRM["u_date"] = f"{u}T23:59:59Z"
         else:
             # Zeit abschneiden falls doch eine drin ist (defensiv)
@@ -285,54 +287,24 @@ def start_process() -> None:
     def _on_list_size(n: int) -> None:
         total_holder[0] = n
 
+    def all_ids(set_spec):
+        return [i for page in generate_id_harvesting_url(PRM, set_spec, session) for i in page]
+
+    a_sets, i_sets = _split_sets(PRM)
     if PRM["id_f"] is not None:
         print(f"{INFO} IDs werden aus {PRM['id_f']} gelesen.")
         ids = read_yaml_file(PRM["id_f"], ["ids"])[0]
-        create_id_file(PRM, ids, folder, type="successful")
-        PRM["n_procs"] = min(int(2 * len(ids) / 300 + 4), 16) if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
+    elif i_sets:
+        a_ids = [i for a_set in a_sets for i in all_ids(a_set)]
+        i_ids = [i for i_set in i_sets for i in all_ids(i_set)]
+        ids = list(set(i_ids) & set(a_ids)) if i_ids else a_ids
+    elif len(a_sets) > 1:
+        ids = list(dict.fromkeys(i for a_set in a_sets for i in all_ids(a_set)))
     else:
-        if PRM["sets"]:
-            sets_dict = PRM["sets"][0] if PRM["sets"] else {"additive": [], "intersection": []}
-            a_sets = sets_dict.get("additive", [])
-            i_sets = sets_dict.get("intersection", [])
-            if i_sets:
-                a_ids = [id for a_set in a_sets for page in generate_id_harvesting_url(PRM, a_set, session) for id in page]
-                i_ids = [id for i_set in i_sets for page in generate_id_harvesting_url(PRM, i_set, session) for id in page]
-                ids = list(set(i_ids) & set(a_ids)) if i_ids else a_ids
-                create_id_file(PRM, ids, folder, type="successful")
-                PRM["n_procs"] = min(int(2 * len(ids) / 300 + 4), 16) if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
-            elif len(a_sets) == 1:
-                ids = collect_ids(PRM, a_sets[0], session, on_list_size=_on_list_size)
-                if PRM["gentle"]:
-                    create_id_file(PRM, ids, folder, type="successful")
-                    PRM["n_procs"] = min(int(2 * len(ids) / 300 + 4), 16) if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
-                else:
-                    PRM["n_procs"] = 16 if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
-            elif a_sets:
-                ids = [id for a_set in a_sets for page in generate_id_harvesting_url(PRM, a_set, session) for id in page]
-                ids = list(dict.fromkeys(ids))
-                create_id_file(PRM, ids, folder, type="successful")
-                PRM["n_procs"] = min(int(2 * len(ids) / 300 + 4), 16) if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
-            else:
-                ids = collect_ids(PRM, None, session, on_list_size=_on_list_size)
-                if PRM["gentle"]:
-                    create_id_file(PRM, ids, folder, type="successful")
-                    PRM["n_procs"] = min(int(2 * len(ids) / 300 + 4), 16) if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
-                else:
-                    PRM["n_procs"] = 16 if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
-        else:
-            ids = collect_ids(PRM, None, session, on_list_size=_on_list_size)
-            if PRM["gentle"]:
-                create_id_file(PRM, ids, folder, type="successful")
-                PRM["n_procs"] = min(int(2 * len(ids) / 300 + 4), 16) if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
-            else:
-                PRM["n_procs"] = 16 if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
-    # Dateiharvesting beginnen
-    logger.info(f"Anzahl der parallelen Downloads auf {PRM['n_procs']} gesetzt (auf Basis der Anzahl an IDs).")
-    print(f"{Style.DIM} Timeout auf {PRM['timeout']} s gesetzt. {Style.RESET_ALL}\n{SEP_LINE}") if PRM[
-        "debug"
-    ] else None
-    if isinstance(ids, list) and len(ids) == 0:
+        # Ein oder kein Set: Pipelining (außer im Gentle Mode)
+        ids = collect_ids(PRM, a_sets[0] if a_sets else None, session, on_list_size=_on_list_size)
+
+    def handle_no_ids() -> None:
         if PRM.get("cleanup_empty"):
             import shutil
 
@@ -340,11 +312,37 @@ def start_process() -> None:
         print_and_log(f"{SEP_LINE}Keine IDs gefunden. Programm beendet.", logger, "warning")
         change_date(OAITIMESTR, PRM["conf_f"], key="fromdate")
         sys.exit()
+
+    pipelined = not isinstance(ids, list)
+    collected: list[str] = []
+    if pipelined:
+        # IDs beim Durchreichen mitschreiben, damit die ID-Datei auch beim
+        # Pipelining nach dem Harvest geschrieben werden kann
+        def _tee(pages):
+            for page in pages:
+                collected.extend(page)
+                yield page
+
+        ids = _tee(ids)
+    else:
+        if not ids:
+            handle_no_ids()
+        create_id_file(PRM, ids, folder, type="successful")
+
+    PRM["n_procs"] = default_n_procs(PRM, None if pipelined else len(ids))
+    logger.info(f"Anzahl der parallelen Downloads auf {PRM['n_procs']} gesetzt (auf Basis der Anzahl an IDs).")
+    print(f"{Style.DIM} Timeout auf {PRM['timeout']} s gesetzt. {Style.RESET_ALL}\n{SEP_LINE}") if PRM[
+        "debug"
+    ] else None
     # ---- Start Harvesting ----
     stats: dict = {}
     failed_download, failed_ids = harvest_files(
         ids, PRM, folder, session, total_holder=total_holder, stats=stats
     )
+    if pipelined:
+        if not collected:
+            handle_no_ids()
+        create_id_file(PRM, collected, folder, type="successful")
 
     # ---- Einmaliger Retry für alle fehlgeschlagenen IDs ----
     # failed_ids:       Timeout/Connection-Fehler → einmal wiederholen
@@ -390,12 +388,13 @@ def start_process() -> None:
                 "info",
             )
 
-        # print runtime
-        elapsed = timeit.default_timer() - start_time
-        hours, remainder = divmod(elapsed, 3600)
-        minutes, seconds = divmod(remainder, 60)
-        runtime = f"{int(hours):02}:{int(minutes):02}:{seconds:.3f}"
-        print_and_log(f"{SEP_LINE}{INFO} Vorgang hat {runtime} gedauert", logger, "info")
+    # print runtime
+    elapsed = timeit.default_timer() - start_time
+    hours, remainder = divmod(elapsed, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    runtime = f"{int(hours):02}:{int(minutes):02}:{seconds:.3f}"
+    print_and_log(f"{SEP_LINE}{INFO} Vorgang hat {runtime} gedauert", logger, "info")
+    if PRM.get("summary"):
         summary_file = write_summary_xml(PRM, folder, stats, runtime)
         print_and_log(f"{INFO} Zusammenfassung: {summary_file}", logger, "info")
 

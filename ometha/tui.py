@@ -88,7 +88,7 @@ def interactiveMode(session: Session) -> dict[str, Any]:
         else:
             n_procs_input = input("Anzahl an parallelen Downloads (default: auto): ").strip()
             PRM["n_procs"] = int(n_procs_input) if n_procs_input else None
-        batch_size_input = input("Dateien pro Unterordner (default: 100000): ").strip()
+        batch_size_input = input("Dateien pro Unterordner (default: keine Unterordner): ").strip()
         PRM["batch_size"] = int(batch_size_input) if batch_size_input else None
         PRM["exp_type"] = (
             get_valid_input(

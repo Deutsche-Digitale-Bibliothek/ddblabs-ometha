@@ -612,8 +612,10 @@ class TestConfDateKeys:
         prm = self._parse_conf_with_yaml(data)
         assert prm["u_date"] == "2024-06-30"
 
-    def test_auto_key_takes_priority_over_manual(self):
-        data = {**self._base_yaml(), "from-Datum": "2025-01-01", "fromdate": "2020-01-01"}
+    def test_fromdate_takes_priority_over_legacy_key(self):
+        """Auto-Modus schreibt 'fromdate' → muss vor dem alten 'from-Datum' gelesen
+        werden, sonst bleibt das from-Datum bei Alt-Configs für immer stehen."""
+        data = {**self._base_yaml(), "from-Datum": "2020-01-01", "fromdate": "2025-01-01"}
         prm = self._parse_conf_with_yaml(data)
         assert prm["f_date"] == "2025-01-01"
 

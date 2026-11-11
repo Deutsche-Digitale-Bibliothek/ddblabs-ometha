@@ -16,6 +16,9 @@ from .helpers import NAMESPACE, TIMESTR, safe_get
 from ._version import __version__ as omethaversion
 
 
+N_PROCS_DEFAULT = 4  # Vorgabewert im Formular
+
+
 def _build_session() -> requests.Session:
     from requests.adapters import HTTPAdapter
 
@@ -117,9 +120,9 @@ def index():
                     with ui.menu() as u_date_menu:
                         ui.date(mask="YYYY-MM-DD").bind_value(u_date)
             with ui.row().classes("w-full gap-4"):
-                n_procs = ui.number("Parallele Downloads", value=4, min=1, max=100).classes("flex-1")
+                n_procs = ui.number("Parallele Downloads", value=N_PROCS_DEFAULT, min=1, max=100).classes("flex-1")
                 timeout = ui.number("Timeout (s)", value=0, min=0).classes("flex-1")
-                batch_size = ui.number("Dateien pro Unterordner", value=100000, min=1).classes("flex-1")
+                batch_size = ui.number("Dateien pro Unterordner (leer = keine)", value=None, min=1).classes("flex-1")
             exp_type = ui.select(["xml", "json"], value="xml", label="Exportformat").classes("w-full")
             deleted_handling = ui.select(
                 ["keep", "skip", "folder"],
@@ -292,7 +295,7 @@ def index():
             "u_date": u_date.value.strip() or None,
             "n_procs": int(n_procs.value or 16),
             "timeout": float(timeout.value or 0),
-            "batch_size": int(batch_size.value or 100000),
+            "batch_size": int(batch_size.value) if batch_size.value else None,
             "exp_type": exp_type.value,
             "deleted_handling": deleted_handling.value,
             "gentle": gentle.value,
@@ -309,7 +312,7 @@ def index():
         # Gentle Mode: Defaults setzen falls nicht explizit überschrieben
         from .helpers import GENTLE_DEFAULTS
         if prm["gentle"]:
-            if not prm["n_procs"] or prm["n_procs"] == 16:
+            if prm["n_procs"] == N_PROCS_DEFAULT:  # nicht vom Nutzer geändert
                 prm["n_procs"] = GENTLE_DEFAULTS["n_procs"]
             if not prm["timeout"]:
                 prm["timeout"] = GENTLE_DEFAULTS["timeout"]

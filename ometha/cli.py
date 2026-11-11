@@ -49,7 +49,7 @@ def parseargs() -> dict[str, Any]:
         s.add_argument(
             "--batchsize",
             type=int,
-            help="Number of files per subfolder (default: 100000)",
+            help="Split output into part_XXXX subfolders of this many files (default: no subfolders)",
             default=None,
             dest="batch_size",
         )
@@ -82,11 +82,26 @@ def parseargs() -> dict[str, Any]:
             default="keep",
             help="How to handle deleted records: keep (default), skip, or move to _deleted/ folder",
         )
+        s.add_argument(
+            "--summary",
+            dest="summary",
+            action="store_true",
+            default=False,
+            help="Write a structured XML run summary (_ometha_<datengeber>_summary.xml)",
+        )
+        s.add_argument(
+            "--sort-invalid",
+            dest="sort_invalid",
+            action="store_true",
+            default=False,
+            help="Move records without element content below <metadata> to _invalid/",
+        )
 
     def convert_common_args(args):
         from .helpers import GENTLE_DEFAULTS
         PRM["gentle"] = args.gentle
         PRM["deleted_handling"] = args.deleted_handling
+        PRM["summary"], PRM["sort_invalid"] = args.summary, args.sort_invalid
         if args.gentle:
             PRM["n_procs"]   = args.parallel  if args.parallel  is not None else GENTLE_DEFAULTS["n_procs"]
             PRM["timeout"]   = args.timeout   if args.timeout   is not None else GENTLE_DEFAULTS["timeout"]
@@ -191,6 +206,20 @@ def parseargs() -> dict[str, Any]:
                 action="store_true",
                 help="Ausgabeordner löschen wenn keine Datensätze geharvestet wurden.",
             )
+            prs.add_argument(
+                "--summary",
+                dest="summary",
+                action="store_true",
+                default=False,
+                help="Write a structured XML run summary (_ometha_<datengeber>_summary.xml)",
+            )
+            prs.add_argument(
+                "--sort-invalid",
+                dest="sort_invalid",
+                action="store_true",
+                default=False,
+                help="Move records without element content below <metadata> to _invalid/",
+            )
         elif cmd == "auto":
             add_common_args(prs)
             prs.add_argument("--url", "-u", required=True, help="URL")
@@ -247,8 +276,9 @@ def parseargs() -> dict[str, Any]:
         f_auto, f_manual, u_auto, u_manual = read_yaml_file(
             PRM["conf_f"], ["from-Datum", "fromdate", "until-Datum", "untildate"]
         )
-        f_date_raw = f_auto or f_manual
-        u_date_raw = u_auto or u_manual
+        # Auto-Modus schreibt "fromdate"/"untildate" → diese haben Vorrang
+        f_date_raw = f_manual or f_auto
+        u_date_raw = u_manual or u_auto
         PRM["f_date"] = _resolve_date(str(f_date_raw)) if f_date_raw else None
         PRM["u_date"] = _resolve_date(str(u_date_raw)) if u_date_raw else None
         if f_date_raw and not PRM["f_date"]:
@@ -272,7 +302,7 @@ def parseargs() -> dict[str, Any]:
         PRM["out_f"] = os.path.expanduser(read_yaml_file(PRM["conf_f"], ["outputfolder"], os.getcwd())[0] or os.getcwd())
         # n_procs: read from config file, None means auto-scale based on ID count
         PRM["n_procs"] = read_yaml_file(PRM["conf_f"], ["numberofprocesses"])[0]
-        # batch_size: read from config file, None means default (100000)
+        # batch_size: read from config file, None means no subfolders
         PRM["batch_size"] = read_yaml_file(PRM["conf_f"], ["batchsize"])[0]
         # max_timeout: read from config file, None means default (120s)
         PRM["max_timeout"] = read_yaml_file(PRM["conf_f"], ["maxtimeout"])[0]
@@ -288,6 +318,10 @@ def parseargs() -> dict[str, Any]:
             for key, default_key in (("n_procs", "n_procs"), ("timeout", "timeout"), ("ratelimit", "ratelimit")):
                 if PRM[key] is None:
                     PRM[key] = GENTLE_DEFAULTS[default_key]
+        # summary / sortinvalid: YAML-Wert hat Vorrang vor dem CLI-Flag
+        summary_yaml, sort_invalid_yaml = read_yaml_file(PRM["conf_f"], ["summary", "sortinvalid"])
+        PRM["summary"] = bool(summary_yaml) if summary_yaml is not None else args.summary
+        PRM["sort_invalid"] = bool(sort_invalid_yaml) if sort_invalid_yaml is not None else args.sort_invalid
         # resumptiontoken: gesetzt wenn Checkpoint-YAML verwendet wird
         PRM["res_tok"] = read_yaml_file(PRM["conf_f"], ["resumptiontoken"])[0]
         # Clean up base URL and prefix if they are not None

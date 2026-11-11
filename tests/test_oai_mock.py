@@ -1266,7 +1266,7 @@ class TestDeletedRecordHandling:
 
 
 class TestInvalidRecordHandling:
-    """Records ohne //metadata/*/*-Knoten werden in _invalid/ verschoben."""
+    """Mit --sort-invalid werden Records ohne //metadata/*/*-Knoten in _invalid/ verschoben."""
 
     EMPTY_METADATA_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
@@ -1305,6 +1305,18 @@ class TestInvalidRecordHandling:
             text=xml_body,
         )
 
+    def test_ohne_flag_wird_nichts_aussortiert(self, requests_mock, prm_base, tmp_path, session):
+        """Default (ohne --sort-invalid): auch leere Records werden normal gespeichert."""
+        from ometha.harvester import harvest_files
+
+        self._register_custom_response(requests_mock, "oai:mock:empty001", self.EMPTY_METADATA_XML)
+
+        prm = {**prm_base, "out_f": str(tmp_path)}
+        harvest_files(["oai:mock:empty001"], prm, str(tmp_path), session=session)
+
+        assert not (tmp_path / "_invalid").exists()
+        assert len(list(tmp_path.glob("*.xml"))) == 1
+
     def test_valid_record_nicht_in_invalid(self, requests_mock, prm_base, tmp_path, session):
         """Normaler Record mit //metadata/*/* landet NICHT in _invalid/."""
         from ometha.harvester import harvest_files
@@ -1312,7 +1324,7 @@ class TestInvalidRecordHandling:
         records = [OAIRecord("oai:mock:valid001")]
         OAIMock(records=records).register(requests_mock)
 
-        prm = {**prm_base, "out_f": str(tmp_path)}
+        prm = {**prm_base, "out_f": str(tmp_path), "sort_invalid": True}
         harvest_files(["oai:mock:valid001"], prm, str(tmp_path), session=session)
 
         assert not (tmp_path / "_invalid").exists()
@@ -1324,7 +1336,7 @@ class TestInvalidRecordHandling:
 
         self._register_custom_response(requests_mock, "oai:mock:empty001", self.EMPTY_METADATA_XML)
 
-        prm = {**prm_base, "out_f": str(tmp_path)}
+        prm = {**prm_base, "out_f": str(tmp_path), "sort_invalid": True}
         failed_dl, failed_ids = harvest_files(
             ["oai:mock:empty001"], prm, str(tmp_path), session=session
         )
@@ -1340,7 +1352,7 @@ class TestInvalidRecordHandling:
 
         self._register_custom_response(requests_mock, "oai:mock:empty001", self.EMPTY_METADATA_XML)
 
-        prm = {**prm_base, "out_f": str(tmp_path)}
+        prm = {**prm_base, "out_f": str(tmp_path), "sort_invalid": True}
         failed_dl, failed_ids = harvest_files(
             ["oai:mock:empty001"], prm, str(tmp_path), session=session
         )
@@ -1354,7 +1366,7 @@ class TestInvalidRecordHandling:
 
         self._register_custom_response(requests_mock, "oai:mock:empty001", self.EMPTY_METADATA_XML)
 
-        prm = {**prm_base, "out_f": str(tmp_path)}
+        prm = {**prm_base, "out_f": str(tmp_path), "sort_invalid": True}
         harvest_files(["oai:mock:empty001"], prm, str(tmp_path), session=session)
 
         assert (tmp_path / "_invalid").is_dir()
@@ -1367,7 +1379,7 @@ class TestInvalidRecordHandling:
         OAIMock(records=records).register(requests_mock)
         self._register_custom_response(requests_mock, "oai:mock:empty001", self.EMPTY_METADATA_XML)
 
-        prm = {**prm_base, "out_f": str(tmp_path)}
+        prm = {**prm_base, "out_f": str(tmp_path), "sort_invalid": True}
         failed_dl, failed_ids = harvest_files(
             ["oai:mock:valid002", "oai:mock:empty001"], prm, str(tmp_path), session=session
         )
@@ -1386,7 +1398,7 @@ class TestInvalidRecordHandling:
         records = [OAIRecord("oai:mock:del_invalid", deleted=True)]
         OAIMock(records=records).register(requests_mock)
 
-        prm = {**prm_base, "out_f": str(tmp_path), "deleted_handling": "folder"}
+        prm = {**prm_base, "out_f": str(tmp_path), "deleted_handling": "folder", "sort_invalid": True}
         harvest_files(["oai:mock:del_invalid"], prm, str(tmp_path), session=session)
 
         assert (tmp_path / "_deleted").is_dir()
@@ -1397,15 +1409,9 @@ class TestIsInvalidHelper:
     """Unit-Tests für die is_invalid()-Hilfsfunktion direkt."""
 
     def _call(self, xml_text):
-        # is_invalid ist eine innere Funktion von harvest_files –
-        # wir testen das Verhalten indirekt über den XML-Inhalt.
-        from lxml import etree
-        NAMESPACE = "{http://www.openarchives.org/OAI/2.0/}"
-        try:
-            root = etree.fromstring(xml_text.encode())
-            return not root.findall(f".//{NAMESPACE}metadata/*/*")
-        except Exception:
-            return True
+        from ometha.harvester import _parse_record, is_invalid
+
+        return is_invalid(_parse_record(xml_text.encode()))
 
     def test_valider_record_nicht_invalid(self):
         xml = """<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
@@ -2003,7 +2009,7 @@ class TestHarvestFilesStats:
             text=xml_empty_metadata,
         )
 
-        prm = {**prm_base, "out_f": str(tmp_path)}
+        prm = {**prm_base, "out_f": str(tmp_path), "sort_invalid": True}
         stats: dict = {}
         harvest_files(["oai:mock:invstat001"], prm, str(tmp_path), session=session, stats=stats)
 
@@ -2334,3 +2340,174 @@ class TestCheckpointFilename:
         p2 = write_checkpoint_yaml("tok2", 2000, {"out_f": str(tmp_path)})
         assert p1 == p2
         assert "tok2" in open(p2, encoding="utf-8").read()
+
+
+# ---------------------------------------------------------------------------
+# Regressionstests für den Review von PR #26
+# ---------------------------------------------------------------------------
+
+
+class TestHarvestFilesRegressions:
+    def test_eckige_klammern_im_dateinamen_ersetzt(self, requests_mock, prm_base, tmp_path, session):
+        """Regex hatte \\[\\] durch $$ ersetzt → [ und ] landeten im Dateinamen."""
+        from ometha.harvester import harvest_files
+
+        OAIMock(records=[OAIRecord("oai:mock:a[1]")]).register(requests_mock)
+        prm = {**prm_base, "out_f": str(tmp_path)}
+        harvest_files(["oai:mock:a[1]"], prm, str(tmp_path), session=session)
+
+        names = [f.name for f in tmp_path.glob("*.xml")]
+        assert names == ["oai_mock_a_1_.xml"]
+
+    def test_schreibfehler_landet_in_failed_download(self, requests_mock, prm_base, tmp_path, session):
+        """OSError beim Speichern darf nicht im Future-Callback verschwinden."""
+        from ometha.harvester import harvest_files
+
+        OAIMock.with_dc_records(1).register(requests_mock)
+        oai_id = OAIMock.with_dc_records(1).records[0].identifier
+        missing = str(tmp_path / "gibt_es_nicht")
+        prm = {**prm_base, "out_f": missing}
+        stats: dict = {}
+        failed_dl, failed_ids = harvest_files([oai_id], prm, missing, session=session, stats=stats)
+
+        assert failed_dl == [oai_id]
+        assert stats["successful"] == 0
+
+    def test_abbruch_im_identifier_harvesting_wird_weitergereicht(
+        self, requests_mock, prm_base, tmp_path, session
+    ):
+        """sys.exit() im Producer-Thread muss im Aufrufer ankommen, sonst läuft
+        der Lauf als erfolgreich weiter (und der Auto-Modus setzt das from-Datum)."""
+        from ometha.harvester import harvest_files
+
+        mock = OAIMock.with_dc_records(2)
+        mock.register(requests_mock)
+
+        def pages():
+            yield [mock.records[0].identifier]
+            sys.exit()
+
+        prm = {**prm_base, "out_f": str(tmp_path)}
+        with pytest.raises(SystemExit):
+            harvest_files(pages(), prm, str(tmp_path), session=session)
+
+    def test_timeout_0_bleibt_ohne_timeout(self, requests_mock, prm_base, tmp_path, session, monkeypatch):
+        """timeout=0 heißt 'kein Timeout'; der adaptive Controller darf daraus
+        keinen Median-Latenz-Timeout machen."""
+        import time as _time
+
+        from ometha import harvester
+
+        monkeypatch.setattr(harvester, "MEASURE_INTERVAL", 0.01)
+        mock = OAIMock.with_dc_records(40)
+
+        def slow(request, context):
+            _time.sleep(0.005)
+            return mock._dispatch(request, context)
+
+        requests_mock.get(BASE_URL, text=slow)
+        prm = {**prm_base, "out_f": str(tmp_path), "timeout": 0, "n_procs": 2}
+        harvester.harvest_files([r.identifier for r in mock.records], prm, str(tmp_path), session=session)
+
+        timeouts = {r.timeout for r in requests_mock.request_history if "GetRecord" in r.url}
+        assert timeouts == {None}
+
+    def test_ohne_batchsize_flach_gespeichert(self, requests_mock, prm_base, tmp_path, session):
+        from ometha.harvester import harvest_files
+
+        mock = OAIMock.with_dc_records(3)
+        mock.register(requests_mock)
+        prm = {**prm_base, "out_f": str(tmp_path)}
+        harvest_files([r.identifier for r in mock.records], prm, str(tmp_path), session=session)
+
+        assert len(list(tmp_path.glob("*.xml"))) == 3
+        assert not list(tmp_path.glob("part_*"))
+
+    def test_mit_batchsize_unterordner(self, requests_mock, prm_base, tmp_path, session):
+        from ometha.harvester import harvest_files
+
+        mock = OAIMock.with_dc_records(5)
+        mock.register(requests_mock)
+        prm = {**prm_base, "out_f": str(tmp_path), "batch_size": 2}
+        harvest_files([r.identifier for r in mock.records], prm, str(tmp_path), session=session)
+
+        assert sorted(p.name for p in tmp_path.glob("part_*")) == ["part_0001", "part_0002", "part_0003"]
+        assert len(list(tmp_path.rglob("*.xml"))) == 5
+
+
+class TestWorkerLimit:
+    def test_shrink_bei_belegten_slots_wird_nachgeholt(self):
+        """acquire(blocking=False) schlug bei voller Auslastung still fehl →
+        die Worker-Zahl sank nur auf dem Papier."""
+        from ometha.harvester import _WorkerLimit
+
+        limit = _WorkerLimit(2)
+        limit.acquire()
+        limit.acquire()
+        limit.shrink(1)  # beide Slots belegt → Schuld
+        limit.release()  # wird einbehalten
+        limit.release()
+        assert limit._sem.acquire(blocking=False) is True
+        assert limit._sem.acquire(blocking=False) is False
+
+    def test_grow_tilgt_schuld_zuerst(self):
+        from ometha.harvester import _WorkerLimit
+
+        limit = _WorkerLimit(1)
+        limit.acquire()
+        limit.shrink(1)  # Schuld 1
+        limit.grow(1)  # tilgt Schuld, kein zusätzlicher Slot
+        limit.release()
+        assert limit._sem.acquire(blocking=False) is True
+        assert limit._sem.acquire(blocking=False) is False
+
+
+class TestSplitSets:
+    def test_none_und_strings(self):
+        from ometha.harvester import _split_sets
+
+        assert _split_sets({"sets": [{"additive": None, "intersection": ["b"]}]}) == ([], ["b"])
+        assert _split_sets({"sets": ["a", "b"]}) == (["a", "b"], [])
+        assert _split_sets({"sets": {}}) == ([], [])
+        assert _split_sets({}) == ([], [])
+
+
+class TestStartProcess:
+    """End-to-end durch start_process() gegen den Mock (Pipelining-Pfad)."""
+
+    def _run(self, requests_mock, tmp_path, monkeypatch, **overrides):
+        from ometha import main as ometha_main
+        from ometha.helpers import TIMESTR
+
+        OAIMock.with_dc_records(3).register(requests_mock)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        (tmp_path / ".ometha").write_text("User-Agent: test\nFrom: test\nasciiart: false\n")
+        prm = {
+            "b_url": BASE_URL, "pref": "oai_dc", "dat_geb": "mock", "sets": {}, "debug": False,
+            "timeout": 10, "id_f": None, "f_date": None, "u_date": None, "res_tok": None,
+            "conf_f": None, "conf_m": False, "auto_m": False, "out_f": str(tmp_path / "out"),
+            "n_procs": None, "mode": "cli", "exp_type": "xml", "max_timeout": None,
+            "batch_size": None, "deleted_handling": "keep", "gentle": False, "ratelimit": None,
+            "summary": False, "sort_invalid": False, "no_log": True, "cleanup_empty": False,
+            **overrides,
+        }
+        monkeypatch.setattr(ometha_main, "parseargs", lambda: prm)
+        # loguru erlaubt das Registrieren des Levels PARAMETER nur einmal pro Prozess
+        monkeypatch.setattr(ometha_main.logger, "level", lambda *a, **k: None)
+        monkeypatch.setattr(sys, "argv", ["ometha", "default"])
+        with pytest.raises(SystemExit):
+            ometha_main.start_process()
+        return tmp_path / "out" / "mock" / TIMESTR.replace(":", "_")
+
+    def test_pipelining_schreibt_id_datei_ohne_summary(self, requests_mock, tmp_path, monkeypatch):
+        folder = self._run(requests_mock, tmp_path, monkeypatch)
+
+        assert (folder / "_ometha_successful_ids.yaml").exists()
+        assert not (folder / "_ometha_mock_summary.xml").exists()
+        assert len([f for f in folder.glob("*.xml")]) == 3
+
+    def test_summary_auch_ohne_retry(self, requests_mock, tmp_path, monkeypatch):
+        """Summary stand nur im Retry-Zweig → bei fehlerfreien Läufen fehlte sie."""
+        folder = self._run(requests_mock, tmp_path, monkeypatch, summary=True)
+
+        assert (folder / "_ometha_mock_summary.xml").exists()

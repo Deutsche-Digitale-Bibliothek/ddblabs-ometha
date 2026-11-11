@@ -7,9 +7,8 @@ import time
 import threading
 from collections import defaultdict, deque
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
-from urllib.parse import parse_qs, urlparse
 
 import xmltodict
 import yaml
@@ -41,6 +40,78 @@ from .helpers import (
 )
 
 
+MEASURE_INTERVAL = 5  # Sekunden zwischen zwei Messungen des adaptiven Controllers
+
+
+class _WorkerLimit:
+    """Semaphore mit zur Laufzeit veränderbarer Obergrenze.
+
+    shrink() kann belegte Slots nicht sofort entziehen. Die Differenz wird als
+    Schuld vermerkt und beim nächsten release() einbehalten, statt verloren zu gehen.
+    """
+
+    def __init__(self, n: int):
+        self._sem = threading.Semaphore(n)
+        self._lock = threading.Lock()
+        self._debt = 0
+
+    def acquire(self) -> None:
+        self._sem.acquire()
+
+    def release(self) -> None:
+        with self._lock:
+            if self._debt:
+                self._debt -= 1
+                return
+        self._sem.release()
+
+    def grow(self, n: int) -> None:
+        with self._lock:
+            cancel = min(n, self._debt)
+            self._debt -= cancel
+        for _ in range(n - cancel):
+            self._sem.release()
+
+    def shrink(self, n: int) -> None:
+        for _ in range(n):
+            if not self._sem.acquire(blocking=False):
+                with self._lock:
+                    self._debt += 1
+
+
+def _parse_record(content: bytes) -> etree._Element | None:
+    """Parst eine GetRecord-Antwort einmalig; None bei kaputtem XML."""
+    try:
+        return etree.fromstring(content)
+    except etree.XMLSyntaxError:
+        return None
+
+
+def is_deleted(root: etree._Element | None) -> bool:
+    """True, wenn der Record-Header status="deleted" trägt."""
+    if root is None:
+        return False
+    header = root.find(f".//{NAMESPACE}header")
+    return header is not None and header.get("status") == "deleted"
+
+
+def is_invalid(root: etree._Element | None) -> bool:
+    """Heuristik für --sort-invalid: kein Enkelelement unter <metadata> oder kaputtes XML."""
+    return root is None or not root.findall(f".//{NAMESPACE}metadata/*/*")
+
+
+def _split_sets(PRM: dict) -> tuple[list[str], list[str]]:
+    """Liefert (additive, intersection) aus PRM["sets"], egal in welcher Form es vorliegt."""
+    sets_val = PRM.get("sets")
+    if isinstance(sets_val, dict):
+        sets_val = [sets_val]
+    if isinstance(sets_val, list) and sets_val and isinstance(sets_val[0], dict):
+        return list(sets_val[0].get("additive") or []), list(sets_val[0].get("intersection") or [])
+    if isinstance(sets_val, list):
+        return list(sets_val), []
+    return [], []
+
+
 def _build_yaml_doc(PRM: dict, extra: dict | None = None) -> dict:
     """Build a sanitized dict suitable for yaml.safe_dump().
 
@@ -56,15 +127,8 @@ def _build_yaml_doc(PRM: dict, extra: dict | None = None) -> dict:
         A dict ready for ``yaml.safe_dump()``.
     """
     # Normalize sets to a flat list
-    sets_val = PRM.get("sets")
-    if isinstance(sets_val, list) and sets_val and isinstance(sets_val[0], dict):
-        additive = sets_val[0].get("additive") or []
-        intersection = sets_val[0].get("intersection") or []
-        sets_out = additive + intersection
-    elif isinstance(sets_val, list):
-        sets_out = sets_val or []
-    else:
-        sets_out = []
+    additive, intersection = _split_sets(PRM)
+    sets_out = additive + intersection
 
     doc = {
         "baseurl":           PRM.get("b_url"),
@@ -262,16 +326,18 @@ def harvest_files(
     :return: tuple with failed_download, failed_ids ID-Lists
     """
 
+    batch_size = int(PRM["batch_size"]) if PRM.get("batch_size") else None
+
     def get_subfolder(base_folder: str, index: int) -> str:
         """Gibt den Unterordner für eine Datei anhand ihres Index zurück.
 
-        Teilt die Downloads in Unterordner à batch_size Dateien auf,
-        z.B. part_0001, part_0002 usw. batch_size wird aus PRM["batch_size"]
-        gelesen, default 100.000.
+        Nur mit gesetztem batch_size (--batchsize) werden die Downloads in
+        Unterordner part_0001, part_0002 … à batch_size Dateien aufgeteilt.
+        Ohne batch_size wird flach in base_folder gespeichert (Standard).
         """
-        batch_size = int(PRM["batch_size"]) if PRM.get("batch_size") else 100_000
-        batch_num = index // batch_size + 1
-        subfolder = os.path.join(base_folder, f"part_{batch_num:04d}")
+        if not batch_size:
+            return base_folder
+        subfolder = os.path.join(base_folder, f"part_{index // batch_size + 1:04d}")
         os.makedirs(subfolder, exist_ok=True)
         return subfolder
 
@@ -284,7 +350,7 @@ def harvest_files(
         Returns:
             True on success, False if the file could not be saved (e.g. JSON conversion error).
         """
-        filename = re.sub(r"([:.|&%$=()\"#+\'´`*~<>!?/;,$$]|\s)", "_", oai_id)
+        filename = re.sub(r"([:.|&%$=()\"#+\'´`*~<>!?/;,\[\]]|\s)", "_", oai_id)
         if export_type == "xml":
             with open(os.path.join(folder, f"{filename}.xml"), "w", encoding="utf8") as of:
                 of.write(response)
@@ -303,55 +369,35 @@ def harvest_files(
                 of.write(response)
             return True
 
-    def is_deleted(response_text: str) -> bool:
-        try:
-            root = etree.fromstring(response_text.encode())
-            header = root.find(f".//{NAMESPACE}header")
-            return header is not None and header.get("status") == "deleted"
-        except Exception:
-            return False
-
-    def is_invalid(response_text: str) -> bool:
-        try:
-            root = etree.fromstring(response_text.encode())
-            return not root.findall(f".//{NAMESPACE}metadata/*/*")
-        except Exception:
-            return True
-
     _rate_limit_lock = threading.Lock()
     _last_request_time = [0.0]
 
     QUEUE_SIZE = 500
     id_queue: queue.Queue = queue.Queue(maxsize=QUEUE_SIZE)
     _SENTINEL = object()
-    enqueued_count = [0]
+    producer_error: list[BaseException] = []
 
     def producer() -> None:
+        # Fehler (auch SystemExit aus handle_error) werden gemerkt und im
+        # Hauptthread erneut ausgelöst: sys.exit() in einem Thread beendet nur
+        # diesen Thread, der Lauf würde sonst als erfolgreich weiterlaufen.
         try:
-            if isinstance(ids, list):
-                if not ids:
-                    log_critical_and_print_and_exit(
-                        f"{SEP_LINE}Keine Identifier bekommen, breche ab.", PRM["mode"]
-                    )
-                print_and_log(f"{SEP_LINE}Harveste {len(ids)} IDs.", logger, "info")
-                for oai_id in ids:
+            for page_ids in [ids] if isinstance(ids, list) else ids:
+                for oai_id in page_ids:
                     id_queue.put(oai_id)
-                    enqueued_count[0] += 1
-            else:
-                for page_ids in ids:
-                    for oai_id in page_ids:
-                        id_queue.put(oai_id)
-                        enqueued_count[0] += 1
+        except BaseException as e:
+            producer_error.append(e)
         finally:
             id_queue.put(_SENTINEL)
 
-    if isinstance(ids, list) and len(ids) == 0:
-        log_critical_and_print_and_exit(f"{SEP_LINE}Keine Identifier bekommen, breche ab.", PRM["mode"])
+    if isinstance(ids, list):
+        if not ids:
+            log_critical_and_print_and_exit(f"{SEP_LINE}Keine Identifier bekommen, breche ab.", PRM["mode"])
+        print_and_log(f"{SEP_LINE}Harveste {len(ids)} IDs.", logger, "info")
 
     # ------------------------------------------------------------------ #
     # Gemeinsame Steuerparameter                                           #
     # ------------------------------------------------------------------ #
-    MEASURE_INTERVAL = 5
     WINDOW_SIZE      = 4
     STEP_UP          = 2
     STEP_DOWN        = 1
@@ -370,7 +416,7 @@ def harvest_files(
     stop_event       = threading.Event()
 
     n_workers        = MAX_WORKERS
-    semaphore        = threading.Semaphore(n_workers)
+    limit            = _WorkerLimit(n_workers)
     done_count       = [0]
     throughput_window: deque[float] = deque(maxlen=WINDOW_SIZE)
     worker_snapshots: list[int] = [n_workers]
@@ -414,21 +460,20 @@ def harvest_files(
                         if change > THROUGHPUT_TOL and n_workers < MAX_WORKERS:
                             delta_w = min(STEP_UP, MAX_WORKERS - n_workers)
                             n_workers += delta_w
-                            for _ in range(delta_w):
-                                semaphore.release()
+                            limit.grow(delta_w)
                             logger.info(f"[AdaptivePool] Durchsatz ↑ {avg_now:.2f} f/s (+{change*100:.1f}%) → Worker {old} → {n_workers}")
                         elif change < -THROUGHPUT_TOL and n_workers > MIN_WORKERS:
                             delta_w = min(STEP_DOWN, n_workers - MIN_WORKERS)
                             n_workers -= delta_w
-                            for _ in range(delta_w):
-                                semaphore.acquire(blocking=False)
+                            limit.shrink(delta_w)
                             logger.info(f"[AdaptivePool] Durchsatz ↓ {avg_now:.2f} f/s ({change*100:.1f}%) → Worker {old} → {n_workers}")
                         else:
                             logger.debug(f"[AdaptivePool] Durchsatz stabil {avg_now:.2f} f/s ({change*100:+.1f}%) → Worker bleibt {n_workers}")
                         worker_snapshots.append(n_workers)
 
-            # Timeout anpassen
-            if MAX_TIMEOUT > 0 and len(latency_sample) >= 2:
+            # Timeout anpassen – nur wenn ein Timeout gesetzt ist. timeout=0 heißt
+            # "kein Timeout" und darf nicht auf die Median-Latenz gezogen werden.
+            if MIN_TIMEOUT > 0 and MAX_TIMEOUT > 0 and len(latency_sample) >= 2:
                 sorted_lat = sorted(latency_sample)
                 mid = len(sorted_lat) // 2
                 median_lat = (sorted_lat[mid - 1] + sorted_lat[mid]) / 2 if len(sorted_lat) % 2 == 0 else sorted_lat[mid]
@@ -444,63 +489,78 @@ def harvest_files(
                         logger.debug(f"[AdaptiveTimeout] Latenz stabil Median={median_lat:.2f}s → Timeout bleibt {old_t:.0f}s")
                     timeout_snapshots.append(current_timeout[0])
 
-    def throttled_download(url_with_index: tuple[str, int]) -> dict[str, str] | None:
-        """Wrapper: belegt Semaphore-Slot, liest aktuellen Timeout, führt Download durch."""
-        semaphore.acquire()
+    def download(oai_id: str, index: int) -> dict[str, str] | None:
+        """Lädt einen Record per GetRecord und speichert ihn."""
+        with lock:
+            t = current_timeout[0] or None
+        url = f"{PRM['b_url']}?verb=GetRecord&metadataPrefix={PRM['pref']}&identifier={oai_id}"
+        export_type = PRM["exp_type"]
+        ratelimit = PRM.get("ratelimit")
+        if ratelimit:
+            with _rate_limit_lock:
+                wait = ratelimit - (time.monotonic() - _last_request_time[0])
+                if wait > 0:
+                    time.sleep(wait)
+                _last_request_time[0] = time.monotonic()
+        t_start = time.monotonic()
         try:
-            with lock:
-                t = current_timeout[0] or None
-            t_start = time.monotonic()
-            url, index = url_with_index
-            target_folder = get_subfolder(folder, index)
-            oai_id = parse_qs(urlparse(url).query)["identifier"][0]
-            export_type = PRM["exp_type"]
-            ratelimit = PRM.get("ratelimit")
-            if ratelimit:
-                with _rate_limit_lock:
-                    wait = ratelimit - (time.monotonic() - _last_request_time[0])
-                    if wait > 0:
-                        time.sleep(wait)
-                    _last_request_time[0] = time.monotonic()
-            try:
-                with safe_get(session, url, timeout=t) as resp:
-                    elapsed = time.monotonic() - t_start
-                    with lock:
-                        latency_window.append(elapsed)
-                    if resp.status_code != 200:
-                        logger.critical(f"Statuscode {resp.status_code} bei {url}")
+            with safe_get(session, url, timeout=t) as resp:
+                with lock:
+                    latency_window.append(time.monotonic() - t_start)
+                if resp.status_code != 200:
+                    logger.critical(f"Statuscode {resp.status_code} bei {url}")
+                    return {"failed_download": oai_id}
+                if errors := re.findall(r'error\scode="(.+)">(.+)</error>', resp.text):
+                    logger.warning(f"Datei {url} konnte nicht geharvestet werden ('{errors[0][0]}')")
+                    return {"failed_download": oai_id}
+                root = _parse_record(resp.content)
+                if is_deleted(root):
+                    deleted_handling = PRM.get("deleted_handling", "keep")
+                    if deleted_handling == "skip":
+                        logger.info(f"Gelöschter Record übersprungen: {oai_id}")
+                        return {"skipped_deleted": oai_id}
+                    elif deleted_handling == "folder":
+                        deleted_folder = os.path.join(folder, "_deleted")
+                        os.makedirs(deleted_folder, exist_ok=True)
+                        if not save_file(oai_id, deleted_folder, resp.text, export_type):
+                            return {"failed_download": oai_id}
+                        logger.info(f"Gelöschter Record in _deleted/ verschoben: {oai_id}")
+                        return {"deleted": oai_id}
+                    else:
+                        logger.info(f"Gelöschter Record gespeichert (keep): {oai_id}")
+                elif PRM.get("sort_invalid") and is_invalid(root):
+                    invalid_folder = os.path.join(folder, "_invalid")
+                    os.makedirs(invalid_folder, exist_ok=True)
+                    if not save_file(oai_id, invalid_folder, resp.text, export_type):
                         return {"failed_download": oai_id}
-                    if errors := re.findall(r'error\scode="(.+)">(.+)</error>', resp.text):
-                        logger.warning(f"Datei {url} konnte nicht geharvestet werden ('{errors[0][0]}')")
-                        return {"failed_download": oai_id}
-                    if is_deleted(resp.text):
-                        deleted_handling = PRM.get("deleted_handling", "keep")
-                        if deleted_handling == "skip":
-                            logger.info(f"Gelöschter Record übersprungen: {oai_id}")
-                            return {"skipped_deleted": oai_id}
-                        elif deleted_handling == "folder":
-                            deleted_folder = os.path.join(folder, "_deleted")
-                            os.makedirs(deleted_folder, exist_ok=True)
-                            save_file(oai_id, deleted_folder, resp.text, export_type)
-                            logger.info(f"Gelöschter Record in _deleted/ verschoben: {oai_id}")
-                            return {"deleted": oai_id}
-                        else:
-                            logger.info(f"Gelöschter Record gespeichert (keep): {oai_id}")
-                    elif is_invalid(resp.text):
-                        invalid_folder = os.path.join(folder, "_invalid")
-                        os.makedirs(invalid_folder, exist_ok=True)
-                        save_file(oai_id, invalid_folder, resp.text, export_type)
-                        logger.warning(f"Ungültiger Record in _invalid/ verschoben: {oai_id}")
-                        return {"invalid": oai_id}
-                    if not save_file(oai_id, target_folder, resp.text, export_type):
-                        return {"failed_download": oai_id}
-            except RequestException as e:
-                logger.warning(f"Datei {url} wurde aufgrund eines {type(e).__name__} übersprungen: {e}")
-                return {"failed_id": oai_id}
-            with lock:
-                done_count[0] += 1
+                    logger.warning(f"Ungültiger Record in _invalid/ verschoben: {oai_id}")
+                    return {"invalid": oai_id}
+                if not save_file(oai_id, get_subfolder(folder, index), resp.text, export_type):
+                    return {"failed_download": oai_id}
+        except RequestException as e:
+            logger.warning(f"Datei {url} wurde aufgrund eines {type(e).__name__} übersprungen: {e}")
+            return {"failed_id": oai_id}
+        return None
+
+    def throttled_download(oai_id: str, index: int) -> dict[str, str] | None:
+        """Wrapper: belegt Worker-Slot, führt Download durch, fängt unerwartete Fehler ab.
+
+        Exceptions dürfen hier nicht durchschlagen: in einem Future-Callback würden
+        sie nur geloggt und der Record ginge stillschweigend verloren.
+        """
+        limit.acquire()
+        result = None
+        try:
+            result = download(oai_id, index)
+        except Exception as e:
+            logger.exception(f"Unerwarteter Fehler bei {oai_id}: {e}")
+            result = {"failed_download": oai_id}
         finally:
-            semaphore.release()
+            if not (result and ("failed_download" in result or "failed_id" in result)):
+                with lock:
+                    done_count[0] += 1
+            limit.release()
+        return result
 
     controller_thread = threading.Thread(target=adaptive_controller, daemon=True)
     controller_thread.start()
@@ -513,49 +573,45 @@ def harvest_files(
     producer_thread.start()
 
     failed_oaiids: list[dict[str, str] | None] = []
-    global_index = [0]
+    # Begrenzt die Zahl eingereichter, noch nicht fertiger Downloads, damit nicht
+    # alle IDs auf einmal in die Executor-Queue wandern (Speicher bei Millionen IDs).
+    inflight = threading.BoundedSemaphore(2 * MAX_WORKERS)
 
     # Initiale Gesamtzahl: bei Liste sofort bekannt, bei Pipelining ggf. noch nicht
     # (wird über total_holder nachgereicht, sobald completeListSize geparst wurde)
     initial_total = len(ids) if isinstance(ids, list) else (total_holder[0] if total_holder else None)
 
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        with tqdm(total=initial_total, desc="Harveste...", unit="files", dynamic_ncols=True) as pbar:
+    # tqdm außen: der Executor wartet beim Verlassen auf alle Downloads,
+    # erst danach wird der Fortschrittsbalken geschlossen.
+    with (
+        tqdm(total=initial_total, desc="Harveste...", unit="files", dynamic_ncols=True) as pbar,
+        ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor,
+    ):
 
-            def on_future_done(future) -> None:
-                """Aktualisiert Fortschrittsbalken sofort bei Abschluss eines Downloads,
-                statt erst nachdem alle IDs aus der Queue gezogen wurden."""
-                result = future.result()
-                with lock:
-                    failed_oaiids.append(result)
-                    if pbar.total is None and total_holder and total_holder[0] is not None:
-                        pbar.total = total_holder[0]
-                    pbar.update(1)
-                    pbar.set_postfix(workers=n_workers, timeout=f"{current_timeout[0]:.0f}s")
+        def on_future_done(future) -> None:
+            """Aktualisiert Fortschrittsbalken sofort bei Abschluss eines Downloads."""
+            inflight.release()
+            result = future.result()
+            with lock:
+                failed_oaiids.append(result)
+                if pbar.total is None and total_holder and total_holder[0] is not None:
+                    pbar.total = total_holder[0]
+                pbar.update(1)
+                pbar.set_postfix(workers=n_workers, timeout=f"{current_timeout[0]:.0f}s")
 
-            futures = []
-            while True:
-                oai_id = id_queue.get()
-                if oai_id is _SENTINEL:
-                    break
-                idx = global_index[0]
-                global_index[0] += 1
-                url_with_index = (
-                    PRM["b_url"] + "?verb=GetRecord&metadataPrefix=" + PRM["pref"] + "&identifier=" + str(oai_id),
-                    idx,
-                )
-                future = executor.submit(throttled_download, url_with_index)
-                future.add_done_callback(on_future_done)
-                futures.append(future)
-
-            # Wartet bis alle Downloads abgeschlossen sind. Der Fortschritt läuft
-            # währenddessen bereits über on_future_done, nicht erst danach.
-            for future in as_completed(futures):
-                pass
+        index = 0
+        while (oai_id := id_queue.get()) is not _SENTINEL:
+            inflight.acquire()
+            executor.submit(throttled_download, str(oai_id), index).add_done_callback(on_future_done)
+            index += 1
 
     producer_thread.join()
     stop_event.set()
     controller_thread.join(timeout=MEASURE_INTERVAL + 1)
+
+    if producer_error:
+        # z. B. Identifier-Harvesting abgebrochen: nicht als erfolgreichen Lauf werten
+        raise producer_error[0]
 
     # ---- Abschluss-Statistik ----
     w_min = min(worker_snapshots)
@@ -687,13 +743,11 @@ def write_summary_xml(
     etree.SubElement(source, "baseUrl").text = PRM.get("b_url") or ""
     etree.SubElement(source, "metadataPrefix").text = PRM.get("pref") or ""
     sets_el = etree.SubElement(source, "sets")
-    sets_prm = PRM.get("sets") or []
-    if sets_prm and isinstance(sets_prm, list):
-        sets_dict = sets_prm[0] if sets_prm else {}
-        for set_spec in sets_dict.get("additive", []):
-            etree.SubElement(sets_el, "set", type="additive").text = set_spec
-        for set_spec in sets_dict.get("intersection", []):
-            etree.SubElement(sets_el, "set", type="intersection").text = set_spec
+    additive, intersection = _split_sets(PRM)
+    for set_spec in additive:
+        etree.SubElement(sets_el, "set", type="additive").text = set_spec
+    for set_spec in intersection:
+        etree.SubElement(sets_el, "set", type="intersection").text = set_spec
     if PRM.get("f_date"):
         etree.SubElement(source, "fromDate").text = str(PRM["f_date"])
     if PRM.get("u_date"):
@@ -718,7 +772,7 @@ def write_summary_xml(
         tag = "".join(part.capitalize() if i else part for i, part in enumerate(key.split("_")))
         etree.SubElement(results, tag).text = str(stats.get(key, 0))
 
-    file = os.path.join(folder, f"_ometha_{PRM.get('dat_geb', TIMESTR)}_summary.xml")
+    file = os.path.join(folder, f"_ometha_{PRM.get('dat_geb') or TIMESTR}_summary.xml")
     tree = etree.ElementTree(root)
     tree.write(file, xml_declaration=True, encoding="UTF-8", pretty_print=True)
     return file
