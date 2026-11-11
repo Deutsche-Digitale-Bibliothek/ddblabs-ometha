@@ -6,6 +6,32 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [3.0.0] - 2026-11-11
+
+### Breaking
+
+- Auto mode now writes `fromdate`/`untildate` instead of `from-Datum`/`until-Datum`. The old keys are only read as a fallback.
+- Default timeout is 20s (was: none). `-t 0` still means no timeout.
+- Checkpoints are written as YAML (`resumption_token_*.yaml`) instead of `.txt`.
+
+### Changed
+
+- `part_XXXX` subfolders are opt-in via `--batchsize` / `batchsize`; by default the output folder is flat again.
+- The XML run summary is opt-in via `--summary` / `summary: true`.
+- Moving records without metadata content to `_invalid/` is opt-in via `--sort-invalid` / `sortinvalid: true`.
+- `pytest` and `requests-mock` are no longer runtime dependencies.
+
+### Fixed
+
+- An abort during identifier harvesting (pipelining) no longer counts as a successful run; auto mode no longer moves `fromdate` forward in that case.
+- Unexpected errors while saving a record (e.g. disk full) are reported as `failed_download` instead of being dropped silently.
+- `[` and `]` in OAI identifiers are replaced in filenames again.
+- `_ometha_successful_ids.yaml` is written again when pipelining.
+- `timeout: 0` is no longer turned into an adaptive timeout.
+- Reducing the number of workers in the adaptive pool now takes effect while all workers are busy.
+- Downloads are submitted with backpressure instead of all at once (memory with very large harvests).
+- GUI gentle mode reduces the default number of parallel downloads to 1.
+
 ## [2.5.2] - 2026-10-12
 
 ### Fixed

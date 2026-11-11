@@ -158,6 +158,11 @@ Optionale Parameter:
 - `--gentle`: Aktiviert den Gentle Mode für empfindliche Schnittstellen (siehe [Gentle Mode](#gentle-mode))
 - `--ratelimit`: Mindestabstand zwischen Requests in Sekunden (unabhängig von `--gentle` nutzbar)
 - `--deleted`: Umgang mit gelöschten Records: `keep` (Standard), `skip` oder `folder` (siehe [Gelöschte Records](#gelöschte-records))
+- `--batchsize`: Aufteilung der Downloads in Unterordner `part_0001`, `part_0002` … mit je dieser Anzahl Dateien (Standard: keine Unterordner)
+- `--sort-invalid`: Records ohne Element-Inhalt unterhalb von `<metadata>` in `_invalid/` verschieben (Standard: aus)
+- `--summary`: Strukturierte XML-Zusammenfassung des Laufs schreiben (`_ometha_<datengeber>_summary.xml`, Standard: aus)
+
+Kann ein SSL-Zertifikat nicht validiert werden, protokolliert Ometha das einmalig und schaltet die Zertifikatsprüfung für den Rest des Laufs ab.
 
 ## Harvesten mit Konfigurationsdateien (`config`)
 
@@ -167,7 +172,7 @@ Ometha unterstützt Harvesting über Konfigurationsdateien. So können Harvestin
 ometha conf -c saarland.yaml
 ```
 
-Mit dem optionalen Parameter `-a` bzw. `--auto` wird der **Automatikmodus** aktiviert: Beim Start wird `until-Datum` auf den aktuellen Zeitpunkt gesetzt, nach erfolgreichem Harvesting wird `from-Datum` aktualisiert. Beim nächsten Lauf ist damit automatisch der Zeitraum seit dem letzten Harvesting eingestellt. Ometha verwendet dabei das vollständige Datetime-Format (`YYYY-MM-DDThh:mm:ssZ`), sofern die Schnittstelle das unterstützt.
+Mit dem optionalen Parameter `-a` bzw. `--auto` wird der **Automatikmodus** aktiviert: Beim Start wird `untildate` auf den aktuellen Zeitpunkt gesetzt, nach erfolgreichem Harvesting wird `fromdate` aktualisiert. Beim nächsten Lauf ist damit automatisch der Zeitraum seit dem letzten Harvesting eingestellt. Ometha verwendet dabei das vollständige Datetime-Format (`YYYY-MM-DDThh:mm:ssZ`), sofern die Schnittstelle das unterstützt.
 
 Beispiel für eine Konfigurationsdatei:
 
@@ -196,7 +201,7 @@ debug: false
 
 Pflichtfelder sind `baseurl` und `metadataPrefix`. Der Key `debug` nimmt nur `true` und `false` an, `timeout` nur Zahlen. Datumswerte können als String (`'2024-01-15'`) oder als ISO8601-Datetime (`'2024-01-15T10:00:00Z'`) angegeben werden. Alle anderen Keys sind optional und können `null` sein.
 
-Im `--auto`-Modus verwaltet Ometha zusätzlich die Keys `from-Datum` und `until-Datum` (mit Bindestrich) direkt in der Konfigurationsdatei. Diese haben Vorrang vor `fromdate`/`untildate`.
+Im `--auto`-Modus verwaltet Ometha die Keys `fromdate` und `untildate` direkt in der Konfigurationsdatei. Die alten Keys `from-Datum`/`until-Datum` (bis 2.x) werden nur noch gelesen, wenn `fromdate`/`untildate` fehlen. Zusätzlich verstehen Konfigurationsdateien `batchsize`, `sortinvalid: true` und `summary: true`.
 
 Kommandozeilen-Parameter für den `conf`-Modus:
 
@@ -235,11 +240,11 @@ outputfolder: /data/harvest
 timeout: 5
 debug: false
 # Wird von Ometha automatisch verwaltet (--auto):
-from-Datum: '2026-01-01T00:00:00Z'
-until-Datum: null
+fromdate: '2026-01-01T00:00:00Z'
+untildate: null
 ```
 
-Die Schlüssel `from-Datum` und `until-Datum` werden von Ometha im Auto-Modus automatisch nach jedem Lauf aktualisiert. Alternativ können `fromdate` und `untildate` (ohne Bindestrich) für manuell gesetzte Zeitgrenzen verwendet werden.
+Die Schlüssel `fromdate` und `untildate` werden von Ometha im Auto-Modus automatisch nach jedem Lauf aktualisiert.
 
 ### Stündlicher Cron-Job
 
@@ -248,7 +253,7 @@ Die Schlüssel `from-Datum` und `until-Datum` werden von Ometha im Auto-Modus au
 0 * * * * ometha conf -c /etc/ometha/sulb.yaml --auto --no-log --cleanup-on-empty >> /var/log/ometha-sulb.log 2>&1
 ```
 
-- `--auto`: Aktualisiert `from-Datum`/`until-Datum` in der Konfigurationsdatei automatisch
+- `--auto`: Aktualisiert `fromdate`/`untildate` in der Konfigurationsdatei automatisch
 - `--no-log`: Kein separates Logfile im Ausgabeordner (der Cron-Job leitet stdout/stderr selbst in `/var/log/ometha-sulb.log`)
 - `--cleanup-on-empty`: Leere Zeitstempel-Ordner werden gelöscht, wenn in der Periode keine neuen Records vorhanden waren – verhindert das Ansammeln leerer Verzeichnisse
 
@@ -403,7 +408,7 @@ deleted: skip
 
 Am Ende jedes Harvesting-Laufs gibt Ometha eine Zusammenfassung der übersprungenen bzw. verschobenen gelöschten Records aus.
 
-Records ohne auswertbaren Metadaten-Inhalt (kein Element unterhalb von `//metadata/*`) werden unabhängig von der `--deleted`-Einstellung automatisch in einen `_invalid/`-Unterordner verschoben und geloggt.
+Mit `--sort-invalid` werden Records ohne auswertbaren Metadaten-Inhalt (kein Element unterhalb von `//metadata/*`) unabhängig von der `--deleted`-Einstellung in einen `_invalid/`-Unterordner verschoben und geloggt. Ohne den Parameter werden alle Records normal gespeichert.
 
 # Konfigurationsdatei
 
