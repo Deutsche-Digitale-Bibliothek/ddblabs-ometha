@@ -2522,3 +2522,40 @@ class TestPrintAndLog:
 
         print_and_log("abc", logger, "info", end="")
         assert capsys.readouterr().out == "abc"
+
+
+class TestAbbruch:
+    def test_ctrl_c_wartet_nicht_auf_laufende_downloads(
+        self, requests_mock, prm_base, tmp_path, session, monkeypatch
+    ):
+        """Ctrl+C während des Harvests muss sofort durchkommen. Vorher hat der
+        Executor beim Verlassen erst alle laufenden Downloads abgewartet."""
+        import queue as _queue
+        import time as _time
+
+        from ometha import harvester
+
+        mock = OAIMock.with_dc_records(20)
+
+        def slow(request, context):
+            _time.sleep(1.0)
+            return mock._dispatch(request, context)
+
+        requests_mock.get(BASE_URL, text=slow)
+
+        class InterruptingQueue(_queue.Queue):
+            calls = 0
+
+            def get(self, *a, **k):
+                InterruptingQueue.calls += 1
+                if InterruptingQueue.calls > 4:
+                    raise KeyboardInterrupt
+                return super().get(*a, **k)
+
+        monkeypatch.setattr(harvester.queue, "Queue", InterruptingQueue)
+        prm = {**prm_base, "out_f": str(tmp_path), "n_procs": 2}
+
+        start = _time.monotonic()
+        with pytest.raises(KeyboardInterrupt):
+            harvester.harvest_files([r.identifier for r in mock.records], prm, str(tmp_path), session=session)
+        assert _time.monotonic() - start < 0.8

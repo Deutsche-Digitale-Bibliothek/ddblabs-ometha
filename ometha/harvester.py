@@ -581,29 +581,36 @@ def harvest_files(
     # (wird über total_holder nachgereicht, sobald completeListSize geparst wurde)
     initial_total = len(ids) if isinstance(ids, list) else (total_holder[0] if total_holder else None)
 
-    # tqdm außen: der Executor wartet beim Verlassen auf alle Downloads,
-    # erst danach wird der Fortschrittsbalken geschlossen.
-    with (
-        tqdm(total=initial_total, desc="Harveste...", unit=" files", dynamic_ncols=True) as pbar,
-        ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor,
-    ):
+    # Kein `with` für den Executor: dessen __exit__ würde bei Ctrl+C erst alle
+    # laufenden Downloads (inkl. Timeouts und Retries) abwarten.
+    executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
+    try:
+        with tqdm(total=initial_total, desc="Harveste...", unit=" files", dynamic_ncols=True) as pbar:
 
-        def on_future_done(future) -> None:
-            """Aktualisiert Fortschrittsbalken sofort bei Abschluss eines Downloads."""
-            inflight.release()
-            result = future.result()
-            with lock:
-                failed_oaiids.append(result)
-                if pbar.total is None and total_holder and total_holder[0] is not None:
-                    pbar.total = total_holder[0]
-                pbar.update(1)
-                pbar.set_postfix(workers=n_workers, timeout=f"{current_timeout[0]:.0f}s")
+            def on_future_done(future) -> None:
+                """Aktualisiert Fortschrittsbalken sofort bei Abschluss eines Downloads."""
+                inflight.release()
+                if future.cancelled():
+                    return
+                result = future.result()
+                with lock:
+                    failed_oaiids.append(result)
+                    if pbar.total is None and total_holder and total_holder[0] is not None:
+                        pbar.total = total_holder[0]
+                    pbar.update(1)
+                    pbar.set_postfix(workers=n_workers, timeout=f"{current_timeout[0]:.0f}s")
 
-        index = 0
-        while (oai_id := id_queue.get()) is not _SENTINEL:
-            inflight.acquire()
-            executor.submit(throttled_download, str(oai_id), index).add_done_callback(on_future_done)
-            index += 1
+            index = 0
+            while (oai_id := id_queue.get()) is not _SENTINEL:
+                inflight.acquire()
+                executor.submit(throttled_download, str(oai_id), index).add_done_callback(on_future_done)
+                index += 1
+            executor.shutdown(wait=True)
+    except BaseException:
+        # Ctrl+C o. Ä.: wartende Downloads verwerfen, laufende nicht abwarten
+        stop_event.set()
+        executor.shutdown(wait=False, cancel_futures=True)
+        raise
 
     producer_thread.join()
     stop_event.set()

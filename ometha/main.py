@@ -414,7 +414,11 @@ def main() -> None:
     try:
         start_process()
     except KeyboardInterrupt:
-        sys.exit(0)
+        print_and_log(f"\n{ACHTUNG}Harvesting durch Nutzer abgebrochen.", logger, "warning")
+        logger.complete()  # Log-Queue (enqueue=True) leeren, bevor hart beendet wird
+        # os._exit statt sys.exit: sonst wartet Python beim Beenden auf die noch
+        # laufenden Download-Threads (Timeouts/Retries) und hängt
+        os._exit(0)
 
 
 if __name__ == "__main__":
