@@ -238,7 +238,7 @@ class TestDefaultCommand:
 
     def test_timeout_default(self):
         prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc"])
-        assert prm["timeout"] == 0
+        assert prm["timeout"] == 20
 
     def test_outputfolder_short(self):
         prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-o", "/tmp/myfolder"])
@@ -283,6 +283,8 @@ class TestDefaultCommand:
                 "-e",
                 "json",
                 "--debug",
+                "--batchsize",
+                "2000",
             ]
         )
         assert prm["b_url"] == "http://oai.example.org/"
@@ -297,6 +299,82 @@ class TestDefaultCommand:
         assert prm["out_f"] == "/tmp/harvest"
         assert prm["exp_type"] == "json"
         assert prm["debug"] is True
+        assert prm["batch_size"] == 2000
+        assert prm["deleted_handling"] == "keep"  # default
+
+    def test_batchsize_option(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "--batchsize", "500"])
+        assert prm["batch_size"] == 500
+
+    def test_batchsize_default_is_none(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc"])
+        assert prm["batch_size"] is None
+
+    def test_deleted_handling_default_is_keep(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc"])
+        assert prm["deleted_handling"] == "keep"
+
+    def test_deleted_handling_skip(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "--deleted", "skip"])
+        assert prm["deleted_handling"] == "skip"
+
+    def test_deleted_handling_folder(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "--deleted", "folder"])
+        assert prm["deleted_handling"] == "folder"
+
+    def test_gentle_default_is_false(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc"])
+        assert prm["gentle"] is False
+
+    def test_gentle_sets_conservative_defaults(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "--gentle"])
+        assert prm["gentle"] is True
+        assert prm["n_procs"] == 1
+        assert prm["timeout"] == 30
+        assert prm["ratelimit"] == 20
+
+    def test_gentle_timeout_overridable(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "--gentle", "-t", "60"])
+        assert prm["gentle"] is True
+        assert prm["timeout"] == 60
+        assert prm["n_procs"] == 1      # nicht überschrieben → Gentle-Default
+        assert prm["ratelimit"] == 20   # nicht überschrieben → Gentle-Default
+
+    def test_gentle_parallel_overridable(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "--gentle", "-p", "4"])
+        assert prm["n_procs"] == 4
+        assert prm["timeout"] == 30     # nicht überschrieben → Gentle-Default
+
+    def test_gentle_ratelimit_overridable(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "--gentle", "--ratelimit", "5"])
+        assert prm["ratelimit"] == 5.0
+        assert prm["n_procs"] == 1      # nicht überschrieben → Gentle-Default
+
+    def test_ratelimit_ohne_gentle(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "--ratelimit", "10"])
+        assert prm["ratelimit"] == 10.0
+        assert prm["gentle"] is False
+        assert prm["n_procs"] is None   # kein Gentle → keine Änderung
+
+    def test_outputfolder_tilde_expanded(self):
+        """Regression: ~ im Ausgabepfad wurde nicht expandiert (literaler ~-Ordner)."""
+        import os
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-o", "~/harvest"])
+        assert prm["out_f"] != "~/harvest"
+        assert prm["out_f"] == os.path.expanduser("~/harvest")
+        assert "~" not in prm["out_f"]
+
+    def test_outputfolder_tilde_only_expanded(self):
+        """Regression: ~ allein als Pfad wurde nicht expandiert."""
+        import os
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc", "-o", "~"])
+        assert prm["out_f"] != "~"
+        assert prm["out_f"] == os.path.expanduser("~")
+        assert "~" not in prm["out_f"]
+
+    def test_ratelimit_default_is_none(self):
+        prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc"])
+        assert prm["ratelimit"] is None
 
     def test_conf_mode_false_for_default(self):
         prm = parse_with(["default", "-b", "http://x.org/", "-m", "oai_dc"])
@@ -698,6 +776,33 @@ class TestConfCommand:
         prm = self._parse_conf(yaml_data=data)
         assert prm["n_procs"] == 8
 
+    def test_batchsize_is_none_when_not_in_yaml(self):
+        """batchsize nicht in YAML → None (default 10000 greift in main.py)."""
+        prm = self._parse_conf()
+        assert prm["batch_size"] is None
+
+    def test_batchsize_from_yaml(self):
+        """batchsize in YAML wird als batch_size übernommen."""
+        data = {**YAML_CONF_MINIMAL, "batchsize": 500}
+        prm = self._parse_conf(yaml_data=data)
+        assert prm["batch_size"] == 500
+
+    def test_outputfolder_tilde_expanded_from_yaml(self):
+        """Regression: ~ im outputfolder aus YAML wurde nicht expandiert."""
+        data = {**YAML_CONF_MINIMAL, "outputfolder": "~/harvest"}
+        prm = self._parse_conf(yaml_data=data)
+        assert prm["out_f"] != "~/harvest"
+        assert "~" not in prm["out_f"]
+
+    def test_deleted_handling_default_keep_wenn_nicht_in_yaml(self):
+        prm = self._parse_conf()
+        assert prm["deleted_handling"] == "keep"
+
+    def test_deleted_handling_aus_yaml(self):
+        data = {**YAML_CONF_MINIMAL, "deleted": "skip"}
+        prm = self._parse_conf(yaml_data=data)
+        assert prm["deleted_handling"] == "skip"
+
     def test_trailing_whitespace_stripped_from_baseurl(self):
         data = {**YAML_CONF_MINIMAL, "baseurl": "http://x.org/oai/ "}
 
@@ -848,6 +953,39 @@ class TestAutoCommand:
         prm = parse_with(["auto", "-u", "http://oai.example.org/oai/request?metadataPrefix=oai_dc"])
         assert prm["b_url"] == "http://oai.example.org/oai/request"
 
+    def test_batchsize_option(self):
+        prm = parse_with(["auto", "-u", "http://oai.example.org/", "--batchsize", "5000"])
+        assert prm["batch_size"] == 5000
+
+    def test_batchsize_default_is_none(self):
+        prm = parse_with(["auto", "-u", "http://oai.example.org/"])
+        assert prm["batch_size"] is None
+
+    def test_deleted_handling_default_is_keep(self):
+        prm = parse_with(["auto", "-u", "http://oai.example.org/"])
+        assert prm["deleted_handling"] == "keep"
+
+    def test_deleted_handling_folder(self):
+        prm = parse_with(["auto", "-u", "http://oai.example.org/", "--deleted", "folder"])
+        assert prm["deleted_handling"] == "folder"
+
+    def test_gentle_sets_conservative_defaults(self):
+        prm = parse_with(["auto", "-u", "http://oai.example.org/", "--gentle"])
+        assert prm["gentle"] is True
+        assert prm["n_procs"] == 1
+        assert prm["timeout"] == 30
+        assert prm["ratelimit"] == 20
+
+    def test_gentle_overridable(self):
+        prm = parse_with(["auto", "-u", "http://oai.example.org/", "--gentle", "-p", "2", "--ratelimit", "5"])
+        assert prm["n_procs"] == 2
+        assert prm["ratelimit"] == 5.0
+        assert prm["timeout"] == 30     # nicht überschrieben → Gentle-Default
+
+    def test_ratelimit_default_is_none(self):
+        prm = parse_with(["auto", "-u", "http://oai.example.org/"])
+        assert prm["ratelimit"] is None
+
 
 # ---------------------------------------------------------------------------
 # `ids` Subcommand
@@ -936,3 +1074,79 @@ class TestIdsCommand:
         with patch("ometha.cli.read_yaml_file", side_effect=mock_read_yaml):
             prm = parse_with(["ids", "--idfile", "myids.yaml"])
         assert prm["id_f"] == "myids.yaml"
+
+    def test_batchsize_option(self):
+        prm = self._parse_ids(extra_argv=["--batchsize", "500"])
+        assert prm["batch_size"] == 500
+
+    def test_batchsize_default_is_none(self):
+        prm = self._parse_ids()
+        assert prm["batch_size"] is None
+
+    def test_deleted_handling_default_is_keep(self):
+        prm = self._parse_ids()
+        assert prm["deleted_handling"] == "keep"
+
+    def test_deleted_handling_skip(self):
+        prm = self._parse_ids(extra_argv=["--deleted", "skip"])
+        assert prm["deleted_handling"] == "skip"
+
+    def test_gentle_sets_conservative_defaults(self):
+        prm = self._parse_ids(extra_argv=["--gentle"])
+        assert prm["gentle"] is True
+        assert prm["n_procs"] == 1
+        assert prm["timeout"] == 30
+        assert prm["ratelimit"] == 20
+
+    def test_ratelimit_default_is_none(self):
+        prm = self._parse_ids()
+        assert prm["ratelimit"] is None
+
+
+class TestConfGentleMode:
+    """Gentle Mode im conf-Modus: YAML-Key und --gentle-Flag, YAML hat Vorrang."""
+
+    def _parse_conf(self, yaml_extra=None, extra_argv=None):
+        data = {**YAML_CONF_MINIMAL, "timeout": None, **(yaml_extra or {})}
+
+        def mock_read_yaml(path, keys, default=None):
+            return [data.get(k, default) for k in keys]
+
+        argv = ["conf", "-c", "config.yaml"] + (extra_argv or [])
+        with patch("ometha.cli.read_yaml_file", side_effect=mock_read_yaml):
+            return parse_with(argv)
+
+    def test_default_not_gentle(self):
+        prm = self._parse_conf()
+        assert prm["gentle"] is False
+        assert prm["ratelimit"] is None
+
+    def test_yaml_gentle_true_sets_defaults(self):
+        prm = self._parse_conf({"gentle": True})
+        assert prm["gentle"] is True
+        assert prm["n_procs"] == 1
+        assert prm["timeout"] == 30
+        assert prm["ratelimit"] == 20
+
+    def test_cli_flag_enables_gentle(self):
+        prm = self._parse_conf(extra_argv=["--gentle"])
+        assert prm["gentle"] is True
+        assert prm["n_procs"] == 1
+        assert prm["ratelimit"] == 20
+
+    def test_yaml_false_overrides_cli_flag(self):
+        prm = self._parse_conf({"gentle": False}, extra_argv=["--gentle"])
+        assert prm["gentle"] is False
+        assert prm["ratelimit"] is None
+
+    def test_yaml_true_without_cli_flag(self):
+        prm = self._parse_conf({"gentle": True}, extra_argv=[])
+        assert prm["gentle"] is True
+
+    def test_explicit_yaml_values_override_gentle_defaults(self):
+        prm = self._parse_conf(
+            {"gentle": True, "numberofprocesses": 3, "timeout": 60, "ratelimit": 5}
+        )
+        assert prm["n_procs"] == 3
+        assert prm["timeout"] == 60
+        assert prm["ratelimit"] == 5

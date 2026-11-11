@@ -8,7 +8,14 @@ from colorama import Fore, Style
 from loguru import logger
 from lxml import etree
 from requests import Response
-from requests.exceptions import ConnectionError, HTTPError, RetryError, Timeout
+from requests.exceptions import ConnectionError, HTTPError, RetryError, SSLError, Timeout
+
+# Defaults für den --gentle Modus (überschreibbar durch explizite Parameter)
+GENTLE_DEFAULTS = {
+    "n_procs": 1,
+    "timeout": 30,
+    "ratelimit": 20,
+}
 
 # define global variables reused throughout the code
 SEP_LINE = "--------------------------------------\n"
@@ -29,7 +36,7 @@ PRM = {
     "dat_geb": None,  # datengeber: int
     "sets": {},  # dict with two subdicts, either additive or subtractive with a list
     "debug": None,  # debug: bool
-    "timeout": None,  # timeout: float
+    "timeout": 20,  # timeout: float
     "id_f": None,  # id file: path
     "f_date": None,  # from date: int
     "u_date": None,  # until date: int
@@ -41,8 +48,13 @@ PRM = {
     "auto_m": None,  # Automode: bool
     "out_f": None,  # outputfile: path
     "n_procs": None,  # number of parallel downloads: int
+    "max_timeout": None,  # hard ceiling for adaptive timeout in seconds: int
+    "batch_size": None,  # files per subfolder: int (default 100000)
     "mode": None,  # mode: str "ui" or "cli"
     "exp_type": None,  # export type either "xml" or "json"
+    "gentle": False,  # gentle mode: conservative defaults for sensitive endpoints
+    "ratelimit": None,  # minimum seconds between requests: float | None
+    "deleted_handling": "keep",  # how to handle deleted records: "keep", "skip", "folder"
 }
 
 
@@ -127,13 +139,19 @@ def handle_error(e: Exception, mode: str | None, url: str | None = None) -> None
     error_messages = {
         Timeout: "Timeout determining list size. The API is not reachable.",
         RetryError: "Identifier harvesting aborted due to too many retries. Is the API reachable?",
-        HTTPError: "Identifier harvesting aborted due to an HTTP error.",
     }
     if type(e) is ConnectionError:
         if "404" in str(e):
             log_critical_and_print_and_exit("The API is not reachable. Is the URL correct?", mode)
         elif errors := re.findall(r"error\scode=['\"](.+)['\"]>(.*)<\\error", str(e)):
             log_critical_and_print_and_exit(f"{FEHLER} API error: {errors[0][0]}/{errors[0][1]} at {url}", mode)
+    elif type(e) is HTTPError:
+        status = e.response.status_code if e.response is not None else "unknown"
+        log_critical_and_print_and_exit(
+            f"Identifier harvesting aborted due to HTTP {status} at {url}.",
+            mode,
+            e,
+        )
     elif type(e) in error_messages:
         log_critical_and_print_and_exit(error_messages[type(e)], mode, e)
     else:
@@ -157,8 +175,42 @@ def log_critical_and_print_and_exit(
     if exception:
         logger.exception("Exception details:", exc_info=exception)
         sys.exit()
-    if mode == "ui" and input(f"{message}\nDrücken Sie Enter zum Beenden..."):
-        sys.exit()
+    if mode == "ui":
+        input(f"{message}\nDrücken Sie Enter zum Beenden...")
+    sys.exit()
+
+
+def safe_get(session, url: str, **kwargs) -> Response:
+    """Führt session.get() mit gültiger SSL-Zertifikatsprüfung durch.
+
+    Schlägt die Prüfung fehl (z. B. selbstsigniertes oder abgelaufenes
+    Zertifikat), wird das einmalig geloggt und die Zertifikatsprüfung für
+    den Rest des Laufs auf dieser Session deaktiviert, statt den Lauf
+    abzubrechen. Betroffene Schnittstellen tauchen so im Log auf, ohne
+    dass Nutzer:innen den Harvest manuell neu mit einem Unsicher-Flag
+    starten müssen.
+
+    Args:
+        session: Die zu verwendende requests.Session.
+        url: Die anzufragende URL.
+        **kwargs: Weitere an session.get() durchgereichte Argumente
+            (z. B. timeout). ``verify`` darf hier NICHT gesetzt werden,
+            das übernimmt diese Funktion.
+
+    Returns:
+        Das requests.Response-Objekt.
+    """
+    try:
+        return session.get(url, **kwargs)
+    except SSLError as e:
+        if session.verify is not False:
+            logger.warning(f"SSL-Zertifikatsprüfung fehlgeschlagen für {url}: {e}")
+            print(
+                f"{ACHTUNG}SSL-Zertifikat der Schnittstelle konnte nicht validiert werden "
+                f"({url}). Zertifikatsprüfung wird für diesen Lauf deaktiviert."
+            )
+            session.verify = False
+        return session.get(url, **kwargs)
 
 
 def isinvalid_xml_content(response: Response, url: str, mode: str) -> etree._Element:
@@ -182,4 +234,5 @@ def isinvalid_xml_content(response: Response, url: str, mode: str) -> etree._Ele
             f"XML Syntax Error in the API response, probably no valid XML ({url}): '{e}'",
             mode,
         )
+        raise  # log_critical_and_print_and_exit always exits; this is unreachable but keeps root defined
     return root

@@ -11,8 +11,8 @@ import urllib3
 from lxml import etree
 from nicegui import app, run, ui
 
-from .harvester import get_identifier, harvest_files
-from .helpers import NAMESPACE, TIMESTR
+from .harvester import get_identifier, harvest_files, preview_list_size
+from .helpers import NAMESPACE, TIMESTR, safe_get
 from ._version import __version__ as omethaversion
 
 
@@ -35,7 +35,7 @@ def _build_session() -> requests.Session:
 
 
 def _fetch_metadata_formats(b_url: str, session) -> list[str]:
-    resp = session.get(f"{b_url}?verb=ListMetadataFormats", verify=False, timeout=(10, 30))
+    resp = safe_get(session, f"{b_url}?verb=ListMetadataFormats", timeout=(10, 30))
     root = etree.XML(resp.content)
     return [el.text for el in root.findall(f".//{NAMESPACE}metadataPrefix") if el.text]
 
@@ -45,7 +45,7 @@ def _fetch_sets(b_url: str, session) -> dict[str, str]:
     sets: dict[str, str] = {}
     url: str | None = f"{b_url}?verb=ListSets"
     while url:
-        resp = session.get(url, verify=False, timeout=(10, 30))
+        resp = safe_get(session, url, timeout=(10, 30))
         root = etree.XML(resp.content)
         if root.find(f".//{NAMESPACE}error") is not None:
             break
@@ -119,7 +119,23 @@ def index():
             with ui.row().classes("w-full gap-4"):
                 n_procs = ui.number("Parallele Downloads", value=4, min=1, max=100).classes("flex-1")
                 timeout = ui.number("Timeout (s)", value=0, min=0).classes("flex-1")
+                batch_size = ui.number("Dateien pro Unterordner", value=100000, min=1).classes("flex-1")
             exp_type = ui.select(["xml", "json"], value="xml", label="Exportformat").classes("w-full")
+            deleted_handling = ui.select(
+                ["keep", "skip", "folder"],
+                value="keep",
+                label="Gelöschte Records (keep = mitspeichern, skip = verwerfen, folder = _deleted/)",
+            ).classes("w-full")
+            with ui.row().classes("w-full gap-4 items-center"):
+                gentle = ui.switch("Gentle Mode (empfindliche Schnittstellen)").classes("flex-1")
+                ratelimit = ui.number("Rate Limit (s)", value=0, min=0).classes("flex-1").tooltip(
+                    "Mindestabstand zwischen Requests in Sekunden. 0 = kein Limit."
+                )
+
+        # ListSize-Vorschau
+        with ui.row().classes("w-full items-center gap-2"):
+            listsize_btn = ui.button("ListSize prüfen", icon="query_stats").props("outline")
+            listsize_label = ui.label("").classes("text-gray-500 text-sm")
 
         # Fehleranzeige
         error_banner = ui.label("").classes("text-red-600 font-medium hidden")
@@ -182,6 +198,48 @@ def index():
         finally:
             fetch_btn.enable()
 
+    async def check_list_size():
+        url = b_url.value.strip().rstrip("/")
+        prefix = pref.value if isinstance(pref.value, str) else str(pref.value or "")
+        if not url or not prefix:
+            listsize_label.set_text("Base-URL und Metadata Prefix ausfüllen")
+            return
+        listsize_label.set_text("Prüfe ListSize …")
+        listsize_btn.disable()
+        try:
+            session = _build_session()
+
+            base_url = f"{url}?verb=ListIdentifiers&metadataPrefix={prefix}"
+            if f_date.value.strip():
+                base_url += f"&from={f_date.value.strip()}"
+            if u_date.value.strip():
+                base_url += f"&until={u_date.value.strip()}"
+
+            selected_sets = list(sets_select.value or [])
+            if selected_sets:
+                sizes = await asyncio.gather(
+                    *[
+                        run.io_bound(preview_list_size, f"{base_url}&set={s}", session)
+                        for s in selected_sets
+                    ]
+                )
+                if any(size is None for size in sizes):
+                    known_sum = sum(size for size in sizes if size is not None)
+                    unknown_count = sum(1 for size in sizes if size is None)
+                    known_sum_str = f"{known_sum:,}".replace(",", ".")
+                    listsize_label.set_text(
+                        f"≥ {known_sum_str} Records ({unknown_count} von {len(selected_sets)} Sets ohne Angabe, als 0 gezählt)"
+                    )
+                else:
+                    listsize_label.set_text(f"≈ {sum(sizes):,} Records (Summe über {len(selected_sets)} Sets)".replace(",", "."))
+            else:
+                size = await run.io_bound(preview_list_size, base_url, session)
+                listsize_label.set_text(f"≈ {size:,} Records".replace(",", ".") if size is not None else "ListSize nicht angegeben")
+        except Exception as e:
+            listsize_label.set_text(f"Fehler bei der Abfrage: {e}")
+        finally:
+            listsize_btn.enable()
+
     async def pick_folder():
         def _dialog():
             if sys.platform == "darwin":
@@ -234,7 +292,11 @@ def index():
             "u_date": u_date.value.strip() or None,
             "n_procs": int(n_procs.value or 16),
             "timeout": float(timeout.value or 0),
+            "batch_size": int(batch_size.value or 100000),
             "exp_type": exp_type.value,
+            "deleted_handling": deleted_handling.value,
+            "gentle": gentle.value,
+            "ratelimit": float(ratelimit.value) if ratelimit.value else None,
             "debug": False,
             "res_tok": None,
             "id_f": None,
@@ -244,9 +306,19 @@ def index():
             "mode": "cli",
         }
 
+        # Gentle Mode: Defaults setzen falls nicht explizit überschrieben
+        from .helpers import GENTLE_DEFAULTS
+        if prm["gentle"]:
+            if not prm["n_procs"] or prm["n_procs"] == 16:
+                prm["n_procs"] = GENTLE_DEFAULTS["n_procs"]
+            if not prm["timeout"]:
+                prm["timeout"] = GENTLE_DEFAULTS["timeout"]
+            if not prm["ratelimit"]:
+                prm["ratelimit"] = GENTLE_DEFAULTS["ratelimit"]
+
         # Ausgabeordner anlegen
-        folder = os.path.join(prm["out_f"], prm["dat_geb"], TIMESTR)
-        folder = folder.replace(":", "_")
+        safe_timestr = TIMESTR.replace(":", "_")
+        folder = os.path.join(prm["out_f"], prm["dat_geb"], safe_timestr)
         os.makedirs(folder, exist_ok=True)
 
         # UI: laufend
@@ -257,19 +329,29 @@ def index():
 
         try:
             # Phase 1: Identifier sammeln
-            log("Sammle Identifier …")
-            harvest_url = f"{prm['b_url']}?verb=ListIdentifiers&metadataPrefix={prm['pref']}"
+            base_harvest_url = f"{prm['b_url']}?verb=ListIdentifiers&metadataPrefix={prm['pref']}"
             if prm["f_date"]:
-                harvest_url += f"&from={prm['f_date']}"
+                base_harvest_url += f"&from={prm['f_date']}"
             if prm["u_date"]:
-                harvest_url += f"&until={prm['u_date']}"
-            if prm["sets"] and prm["sets"][0].get("additive"):
-                harvest_url += f"&set={prm['sets'][0]['additive'][0]}"
+                base_harvest_url += f"&until={prm['u_date']}"
+
+            additive_sets = prm["sets"][0].get("additive") if prm["sets"] else []
 
             def on_list_size(n: int):
                 log(f"Angegebene ListSize: {n}")
 
-            ids = await run.io_bound(get_identifier, prm, harvest_url, session, on_list_size)
+            if additive_sets:
+                ids = []
+                for set_spec in additive_sets:
+                    log(f"Sammle Identifier für Set '{set_spec}' …")
+                    set_url = base_harvest_url + f"&set={set_spec}"
+                    set_ids = await run.io_bound(get_identifier, prm, set_url, session, on_list_size)
+                    log(f"  {len(set_ids)} Identifier in Set '{set_spec}'.")
+                    ids.extend(set_ids)
+                ids = list(dict.fromkeys(ids))
+            else:
+                log("Sammle Identifier …")
+                ids = await run.io_bound(get_identifier, prm, base_harvest_url, session, on_list_size)
             log(f"{len(ids)} Identifier gefunden.")
 
             # Phase 2: Dateien herunterladen
@@ -292,6 +374,7 @@ def index():
 
     b_url.on("blur", fetch_endpoint_info)
     fetch_btn.on("click", fetch_endpoint_info)
+    listsize_btn.on_click(check_list_size)
     start_btn.on_click(start_harvesting)
 
 
