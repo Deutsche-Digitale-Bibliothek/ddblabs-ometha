@@ -919,7 +919,7 @@ wheels = [
 
 [[package]]
 name = "ometha"
-version = "2.5.2"
+version = "3.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "colorama" },
@@ -929,10 +929,8 @@ dependencies = [
     { name = "p-tqdm" },
     { name = "pretty-errors" },
     { name = "progress" },
-    { name = "pytest" },
     { name = "pyyaml" },
     { name = "requests" },
-    { name = "requests-mock" },
     { name = "urllib3" },
     { name = "xmltodict" },
     { name = "yaspin" },
@@ -959,12 +957,10 @@ requires-dist = [
     { name = "p-tqdm", specifier = ">=1.4.2" },
     { name = "pretty-errors", specifier = ">=1.2.25" },
     { name = "progress", specifier = ">=1.6.1" },
-    { name = "pytest", specifier = ">=9.0.3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "requests", specifier = ">=2.32.5" },
-    { name = "requests-mock", specifier = ">=1.12.1" },
     { name = "urllib3", specifier = ">=2.5.0" },
     { name = "xmltodict", specifier = ">=1.0.2" },
     { name = "yaspin", specifier = ">=3.4.0" },
