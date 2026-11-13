@@ -21,10 +21,12 @@ from ._version import __version__
 from .cli import parseargs
 from .harvester import (
     change_date,
+    _split_sets,
     create_id_file,
-    get_identifier,
+    get_identifier_pages,
     harvest_files,
     read_yaml_file,
+    write_summary_xml,
 )
 from .helpers import (
     ACHTUNG,
@@ -36,24 +38,26 @@ from .helpers import (
     configure_logging,
     log_critical_and_print_and_exit,
     print_and_log,
+    safe_get,
 )
 from .tui import interactiveMode
 
 
-def calc_retry_n_procs(failed_ids, ids):
-    """Anzahl paralleler Downloads für den Retry-Durchlauf.
-
-    Je kleiner der Anteil fehlgeschlagener IDs, desto mehr parallele
-    Downloads sind beim Retry vertretbar. Bei leerer `failed_ids`-Liste
-    (z.B. wenn nur `failed_download` fehlgeschlagen ist) würde die
-    ursprüngliche Formel `1 / (len(failed_ids) / len(ids))` durch 0 teilen.
-    """
-    if not failed_ids:
-        return 1
-    return min(int(1 / (len(failed_ids) / len(ids)) + 1), 6)
+def default_n_procs(PRM: dict, n_ids: int | None) -> int:
+    """Anzahl paralleler Downloads: expliziter Wert (max. 100), sonst anhand der
+    ID-Anzahl skaliert (max. 16). Bei Pipelining ist die Anzahl unbekannt → 16."""
+    if PRM["n_procs"] is not None:
+        return min(int(PRM["n_procs"]), 100)
+    return 16 if n_ids is None else min(int(2 * n_ids / 300 + 4), 16)
 
 
-def generate_id_harvesting_url(PRM: dict, set: str, session: requests.Session) -> list[str]:
+def _has_time(d) -> bool:
+    return bool(d) and "T" in str(d)
+
+
+def generate_id_harvesting_url(
+    PRM: dict, set: str, session: requests.Session, on_list_size=None
+) -> list[str]:
     """Build a ListIdentifiers URL from PRM parameters and return all harvested IDs.
 
     If a resumption token is present in PRM it is used directly; otherwise the URL
@@ -63,21 +67,54 @@ def generate_id_harvesting_url(PRM: dict, set: str, session: requests.Session) -
         PRM: Parameters dictionary with harvesting configuration.
         set: OAI set spec to restrict harvesting, or empty string for no set filter.
         session: HTTP session to use for requests.
+        on_list_size: Optional callback invoked once completeListSize is known,
+            used to feed the progress bar's ETA during pipelining.
 
     Returns:
         A list of all OAI identifier strings found at the endpoint.
     """
     urlpar = {"from": "f_date", "until": "u_date", "metadataPrefix": "pref"}
-    base_url = f"{PRM['b_url']}?verb=ListIdentifiers&"
+    base_url = f"{PRM['b_url']}?verb=ListIdentifiers"
+
+    # OAI-PMH-Spec §3.3: from und until müssen dieselbe Granularität haben.
+    # Enthält einer der Werte eine Uhrzeit (T…Z), beide auf Datetime-Granularität
+    # hochstufen; enthält keiner eine Uhrzeit, beide auf Datums-Granularität
+    # (YYYY-MM-DD) kürzen.
+    f, u = PRM.get("f_date"), PRM.get("u_date")
+    if f or u:
+        if _has_time(f) or _has_time(u):
+            # Datum ohne Zeit → Mitternacht UTC anhängen
+            if f and not _has_time(f):
+                PRM["f_date"] = f"{f}T00:00:00Z"
+            if u and not _has_time(u):
+                PRM["u_date"] = f"{u}T23:59:59Z"
+        else:
+            # Zeit abschneiden falls doch eine drin ist (defensiv)
+            if f:
+                PRM["f_date"] = str(f)[:10]
+            if u:
+                PRM["u_date"] = str(u)[:10]
+        if f != PRM["f_date"] or u != PRM["u_date"]:
+            logger.info(f"Datumsgranularität vereinheitlicht: from={PRM['f_date']} until={PRM['u_date']}")
+
     if PRM["res_tok"]:
         url = f"{base_url}&resumptionToken={PRM['res_tok']}"
         logger.info(f"Fortsetzen des Identifier-Harvestings bei: {re.sub('/$', '', url)}")
     else:
-        url = f"{base_url}{'&'.join(f'{name}={PRM[key]}' for name, key in urlpar.items() if PRM[key] is not None)}"
+        params = "&".join(f"{name}={PRM[key]}" for name, key in urlpar.items() if PRM[key] is not None)
+        url = f"{base_url}&{params}" if params else base_url
     if set:
         url = f"{url}&set={set}"
 
-    return get_identifier(PRM, url, session)
+    return get_identifier_pages(PRM, url, session, on_list_size=on_list_size)
+
+
+def collect_ids(PRM: dict, set: str | None, session: requests.Session, on_list_size=None):
+    """Sammelt IDs für ein Set. Im Gentle Mode wird vollständig eingesammelt
+    (kein Pipelining), sonst wird der Generator zum Pipelining durchgereicht."""
+    if PRM["gentle"]:
+        return [id for page in generate_id_harvesting_url(PRM, set, session) for id in page]
+    return generate_id_harvesting_url(PRM, set, session, on_list_size=on_list_size)
 
 
 def start_process() -> None:
@@ -138,10 +175,8 @@ def start_process() -> None:
         )
     headers = {"User-Agent": headers["User-Agent"], "From": headers["From"]}
 
-    # Session konfigurieren
-    def assert_status_hook(response, *args, **kwargs):
-        response.raise_for_status()
-
+    # Session konfigurieren – kein response-Hook, damit der HTTPAdapter-Retry
+    # bei 429/5xx greifen kann ohne sofort eine HTTPError zu werfen.
     adapter = HTTPAdapter(
         max_retries=urllib3.util.retry.Retry(
             total=8,
@@ -151,7 +186,6 @@ def start_process() -> None:
         )
     )
     session = requests.Session()
-    session.hooks["response"].append(assert_status_hook)
     session.mount("https://", adapter)
     session.mount("http://", adapter)
     session.headers.update(headers)
@@ -168,13 +202,13 @@ def start_process() -> None:
     # output PRM dictionary if debug mode is enabled via environment variable
     if os.getenv("OMETHA_DEBUG") == "True":
         print(PRM)
-    folder = os.path.join(PRM["out_f"], PRM["dat_geb"], TIMESTR)
-    folder = folder.replace(":", "_")
+    safe_timestr = TIMESTR.replace(":", "_")
+    folder = os.path.join(PRM["out_f"], PRM["dat_geb"], safe_timestr)
     os.makedirs(folder, exist_ok=True)
 
     # bei Configmode & Automode das until-Datum setzen bevor es geloggt wird
     if PRM["conf_m"] and PRM["auto_m"]:
-        change_date(OAITIMESTR, PRM["conf_f"], key="until-Datum")
+        change_date(OAITIMESTR, PRM["conf_f"], key="untildate")
         PRM["u_date"] = OAITIMESTR
 
     # Logfile anlegen
@@ -217,7 +251,7 @@ def start_process() -> None:
     try:
         # try baseurl
         with yaspin(Spinners.dots, text=f"Checking if {PRM['b_url']} is accessible"):
-            session.get(PRM["b_url"], verify=False, timeout=(20, 80))
+            safe_get(session, PRM["b_url"], timeout=(20, 80))
     except (
         requests.exceptions.HTTPError,
         requests.exceptions.RetryError,
@@ -230,7 +264,7 @@ def start_process() -> None:
                 Spinners.dots,
                 text=f"Checking if {PRM['b_url']}?verb=Identify is accessible",
             ):
-                session.get(PRM["b_url"] + "?verb=Identify", verify=False, timeout=(20, 80))
+                safe_get(session, PRM["b_url"] + "?verb=Identify", timeout=(20, 80))
         except (
             requests.exceptions.HTTPError,
             requests.exceptions.RetryError,
@@ -246,73 +280,125 @@ def start_process() -> None:
     # Timer starten
     start_time = timeit.default_timer()
 
+    # Wird gefüllt sobald completeListSize bekannt ist (nur bei Pipelining relevant),
+    # damit der Fortschrittsbalken eine Gesamtzahl/ETA anzeigen kann.
+    total_holder: list = [None]
+
+    def _on_list_size(n: int) -> None:
+        total_holder[0] = n
+
+    def all_ids(set_spec):
+        return [i for page in generate_id_harvesting_url(PRM, set_spec, session) for i in page]
+
+    a_sets, i_sets = _split_sets(PRM)
     if PRM["id_f"] is not None:
-        # read ids from file
         print(f"{INFO} IDs werden aus {PRM['id_f']} gelesen.")
         ids = read_yaml_file(PRM["id_f"], ["ids"])[0]
+    elif i_sets:
+        a_ids = [i for a_set in a_sets for i in all_ids(a_set)]
+        i_ids = [i for i_set in i_sets for i in all_ids(i_set)]
+        ids = list(set(i_ids) & set(a_ids)) if i_ids else a_ids
+    elif len(a_sets) > 1:
+        ids = list(dict.fromkeys(i for a_set in a_sets for i in all_ids(a_set)))
     else:
-        # get ids from url
-        if PRM["sets"]:  # Check if sets is not empty
-            # Initialize lists for comma and slash sets
-            # Extract the first dictionary from the sets list
-            sets_dict = PRM["sets"][0] if PRM["sets"] else {"additive": [], "intersection": []}
-            a_sets = sets_dict.get("additive", [])
-            i_sets = sets_dict.get("intersection", [])
+        # Ein oder kein Set: Pipelining (außer im Gentle Mode)
+        ids = collect_ids(PRM, a_sets[0] if a_sets else None, session, on_list_size=_on_list_size)
 
-            # If both additive and intersection are empty, use set=None
-            if not a_sets and not i_sets:
-                ids = generate_id_harvesting_url(PRM, set=None, session=session)
-            else:
-                # Initialize lists for comma and slash ids
-                a_ids = [id for a_set in a_sets for id in generate_id_harvesting_url(PRM, a_set, session)]
-                i_ids = [id for i_set in i_sets for id in generate_id_harvesting_url(PRM, i_set, session)]
-                # If both i_ids and a_ids exist, get the common ids
-                ids = list(set(i_ids) & set(a_ids)) if i_ids else a_ids
-        else:
-            ids = generate_id_harvesting_url(PRM, set=None, session=session)
-
-        create_id_file(PRM, ids, folder, type="successful")
-    # Dateiharvesting beginnen
-    # None means no explicit value was given → auto-scale based on ID count (max 16)
-    PRM["n_procs"] = min(int(2 * len(ids) / 300 + 4), 16) if PRM["n_procs"] is None else min(int(PRM["n_procs"]), 100)
-    logger.info(f"Anzahl der parallelen Downloads auf {PRM['n_procs']} gesetzt (auf Basis der Anzahl an IDs).")
-    print(f"{Style.DIM} Timeout auf {PRM['timeout']} s gesetzt. {Style.RESET_ALL}\n{SEP_LINE}") if PRM[
-        "debug"
-    ] else None
-    if len(ids) == 0:
+    def handle_no_ids() -> None:
         if PRM.get("cleanup_empty"):
             import shutil
 
             shutil.rmtree(folder, ignore_errors=True)
         print_and_log(f"{SEP_LINE}Keine IDs gefunden. Programm beendet.", logger, "warning")
-        change_date(OAITIMESTR, PRM["conf_f"], key="from-Datum")
+        change_date(OAITIMESTR, PRM["conf_f"], key="fromdate")
         sys.exit()
+
+    pipelined = not isinstance(ids, list)
+    collected: list[str] = []
+    if pipelined:
+        # IDs beim Durchreichen mitschreiben, damit die ID-Datei auch beim
+        # Pipelining nach dem Harvest geschrieben werden kann
+        def _tee(pages):
+            for page in pages:
+                collected.extend(page)
+                yield page
+
+        ids = _tee(ids)
+    else:
+        if not ids:
+            handle_no_ids()
+        create_id_file(PRM, ids, folder, type="successful")
+
+    PRM["n_procs"] = default_n_procs(PRM, None if pipelined else len(ids))
+    logger.info(f"Anzahl der parallelen Downloads auf {PRM['n_procs']} gesetzt (auf Basis der Anzahl an IDs).")
+    print(f"{Style.DIM} Timeout auf {PRM['timeout']} s gesetzt. {Style.RESET_ALL}\n{SEP_LINE}") if PRM[
+        "debug"
+    ] else None
     # ---- Start Harvesting ----
-    failed_download, failed_ids = harvest_files(ids, PRM, folder, session)
-    # ---- Retry failed downloads ----
-    if failed_ids or failed_download:
-        # failed_ids: Beim Harvesting übersprungene Dateien (wegen Timeout/Connection-problem). Hier nochmal versuchen!
-        print(f"Fehlgeschlagene IDs: {failed_ids}") if PRM["debug"] else None
-        failed_idfile = create_id_file(PRM, failed_ids, folder, type="failed")
+    stats: dict = {}
+    failed_download, failed_ids = harvest_files(
+        ids, PRM, folder, session, total_holder=total_holder, stats=stats
+    )
+    if pipelined:
+        if not collected:
+            handle_no_ids()
+        create_id_file(PRM, collected, folder, type="successful")
+
+    # ---- Einmaliger Retry für alle fehlgeschlagenen IDs ----
+    # failed_ids:       Timeout/Connection-Fehler → einmal wiederholen
+    # failed_download:  HTTP-Fehler oder ungültige Antwort → auch wiederholen,
+    #                   da manche Schnittstellen Datensätze erst ad hoc erzeugen
+    retry_ids = list(set(failed_ids + failed_download))
+    if retry_ids:
+        print(f"Fehlgeschlagene IDs: {retry_ids}") if PRM["debug"] else None
+        failed_idfile = create_id_file(PRM, retry_ids, folder, type="failed")
         print_and_log(
-            f"{SEP_LINE}{ACHTUNG} Es wurden IDs aufgrund von Verbindungsproblemen übersprungen.\n  Siehe dazu {failed_idfile}{SEP_LINE}{INFO} fehlgeschlagene IDs erneut harvesten..",
+            f"{SEP_LINE}{ACHTUNG} {len(retry_ids)} IDs konnten nicht geharvestet werden.\n"
+            f"  Siehe dazu {failed_idfile}\n"
+            f"{SEP_LINE}{INFO} Fehlgeschlagene IDs werden einmalig erneut versucht...",
             logger,
             "warning",
         )
-        PRM["n_procs"] = calc_retry_n_procs(failed_ids, ids)
-        failed_download, failed_ids = harvest_files(failed_ids, PRM, folder, session)
+        # Weniger parallele Worker für den Retry – schont langsame Schnittstellen
+        retry_n_procs = min(max(1, PRM["n_procs"] // 2), 6) if PRM["n_procs"] else 4
+        PRM_retry = {**PRM, "n_procs": retry_n_procs}
+        retry_stats: dict = {}
+        failed_download, failed_ids = harvest_files(retry_ids, PRM_retry, folder, session, stats=retry_stats)
+        # Zusammenfassung an den finalen Stand nach dem Retry anpassen:
+        # ursprünglich fehlgeschlagene IDs, die beim Retry doch erfolgreich waren,
+        # zählen jetzt als erfolgreich; die verbleibenden als endgültig fehlgeschlagen.
+        stats["successful"] = stats.get("successful", 0) + retry_stats.get("successful", 0)
+        stats["skipped_deleted"] = stats.get("skipped_deleted", 0) + retry_stats.get("skipped_deleted", 0)
+        stats["moved_deleted"] = stats.get("moved_deleted", 0) + retry_stats.get("moved_deleted", 0)
+        stats["moved_invalid"] = stats.get("moved_invalid", 0) + retry_stats.get("moved_invalid", 0)
+        stats["failed_download"] = len(failed_download)
+        stats["failed_ids"] = len(failed_ids)
         if failed_ids or failed_download:
             print_and_log(
-                f"{SEP_LINE}{INFO} Harvesting von {len(failed_download) + len(failed_ids)} Datensätzen fehlgeschlagen\nProgramm beendet",
+                f"{SEP_LINE}{INFO} Nach erneutem Versuch: "
+                f"{len(failed_download) + len(failed_ids)} Datensätze endgültig fehlgeschlagen.",
+                logger,
+                "warning",
+            )
+            create_id_file(PRM, failed_ids + failed_download, folder, type="final_failed")
+        else:
+            print_and_log(
+                f"{SEP_LINE}{INFO} Alle IDs beim zweiten Versuch erfolgreich geharvestet.",
                 logger,
                 "info",
             )
 
-        # print runtime
-        runtime = "{:02}:{:02}:{:.3f}".format(*divmod(timeit.default_timer() - start_time, 3600, 60))
-        print_and_log(f"{SEP_LINE}{INFO} Vorgang hat {runtime} gedauert", logger, "info")
+    # print runtime
+    elapsed = timeit.default_timer() - start_time
+    hours, remainder = divmod(elapsed, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    runtime = f"{int(hours):02}:{int(minutes):02}:{seconds:.3f}"
+    print_and_log(f"{SEP_LINE}{INFO} Vorgang hat {runtime} gedauert", logger, "info")
+    if PRM.get("summary"):
+        summary_file = write_summary_xml(PRM, folder, stats, runtime)
+        print_and_log(f"{INFO} Zusammenfassung: {summary_file}", logger, "info")
 
-    change_date(OAITIMESTR, PRM["conf_f"], key="from-Datum")
+    change_date(OAITIMESTR, PRM["conf_f"], key="fromdate")
 
     if os.name == "nt":
         # Beenden unter Windows
@@ -328,7 +414,11 @@ def main() -> None:
     try:
         start_process()
     except KeyboardInterrupt:
-        sys.exit(0)
+        print_and_log(f"\n{ACHTUNG}Harvesting durch Nutzer abgebrochen.", logger, "warning")
+        logger.complete()  # Log-Queue (enqueue=True) leeren, bevor hart beendet wird
+        # os._exit statt sys.exit: sonst wartet Python beim Beenden auf die noch
+        # laufenden Download-Threads (Timeouts/Retries) und hängt
+        os._exit(0)
 
 
 if __name__ == "__main__":

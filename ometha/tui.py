@@ -8,7 +8,7 @@ from requests import Session
 from requests.exceptions import ConnectionError, HTTPError, Timeout
 
 from .cli import parse_set_values
-from .helpers import resolve_date
+from .helpers import resolve_date, safe_get
 from .harvester import (
     NAMESPACE,
     PRM,
@@ -44,7 +44,7 @@ def interactiveMode(session: Session) -> dict[str, Any]:
 
     def get_folder_input(prompt, default_folder):
         folder_input = input(prompt).strip()
-        return folder_input if folder_input else default_folder
+        return os.path.expanduser(folder_input) if folder_input else default_folder
 
     def is_valid_url(url):
         return bool(re.search(r"https?://\S+", url))
@@ -75,8 +75,21 @@ def interactiveMode(session: Session) -> dict[str, Any]:
     def add_common_args():
         PRM["dat_geb"] = input("Datengeber: ") or TIMESTR
         PRM["out_f"] = get_folder_input("Ordner in den geharvestet werden soll: ", os.getcwd())
-        n_procs_input = input("Anzahl an parallelen Downloads (default: auto): ").strip()
-        PRM["n_procs"] = int(n_procs_input) if n_procs_input else None
+        gentle_input = get_valid_input(
+            "Gentle Mode aktivieren? (für empfindliche Schnittstellen) [j/n] (default: n): ",
+            lambda x: x.lower() in {"j", "n", "ja", "nein", ""},
+            "Bitte 'j' oder 'n' eingeben.",
+        ).lower()
+        PRM["gentle"] = gentle_input in {"j", "ja"}
+        from .helpers import GENTLE_DEFAULTS
+        if PRM["gentle"]:
+            n_procs_input = input(f"Anzahl an parallelen Downloads (default: {GENTLE_DEFAULTS['n_procs']}): ").strip()
+            PRM["n_procs"] = int(n_procs_input) if n_procs_input else GENTLE_DEFAULTS["n_procs"]
+        else:
+            n_procs_input = input("Anzahl an parallelen Downloads (default: auto): ").strip()
+            PRM["n_procs"] = int(n_procs_input) if n_procs_input else None
+        batch_size_input = input("Dateien pro Unterordner (default: keine Unterordner): ").strip()
+        PRM["batch_size"] = int(batch_size_input) if batch_size_input else None
         PRM["exp_type"] = (
             get_valid_input(
                 "Exportformat (xml/json) (default: xml): ",
@@ -85,7 +98,22 @@ def interactiveMode(session: Session) -> dict[str, Any]:
             )
             or "xml"
         )
-        PRM["timeout"] = float(input("Timeout in Sekunden (default: 0): ") or 0)
+        if PRM["gentle"]:
+            timeout_raw = input(f"Timeout in Sekunden (default: {GENTLE_DEFAULTS['timeout']}): ").strip()
+            PRM["timeout"] = float(timeout_raw) if timeout_raw else GENTLE_DEFAULTS["timeout"]
+            ratelimit_raw = input(f"Rate Limit in Sekunden (default: {GENTLE_DEFAULTS['ratelimit']}): ").strip()
+            PRM["ratelimit"] = float(ratelimit_raw) if ratelimit_raw else GENTLE_DEFAULTS["ratelimit"]
+        else:
+            timeout_raw = input("Timeout in Sekunden (default: 20): ").strip()
+            PRM["timeout"] = float(timeout_raw) if timeout_raw else 20
+            ratelimit_raw = input("Rate Limit in Sekunden (default: kein Limit): ").strip()
+            PRM["ratelimit"] = float(ratelimit_raw) if ratelimit_raw else None
+        deleted_input = get_valid_input(
+            "Gelöschte Records behandeln (keep/skip/folder) (default: keep): ",
+            lambda x: x.lower() in {"keep", "skip", "folder"} or x == "",
+            "Bitte 'keep', 'skip' oder 'folder' eingeben.",
+        ).lower()
+        PRM["deleted_handling"] = deleted_input or "keep"
 
     if how_to_start == "E":
         sys.exit("Programm beendet.")
@@ -158,7 +186,7 @@ def get_sets_mprefs(url: str, session: Session, sets: dict[str, str]) -> None:
         sets: Accumulator dict mapping set name to set spec, shared across recursive calls.
     """
     try:
-        response = session.get(url, verify=False, timeout=(20, 80))
+        response = safe_get(session, url, timeout=(20, 80))
         root = isinvalid_xml_content(response, url, mode="ui")
     except (Timeout, HTTPError, ConnectionError) as e:
         handle_error(e, "ui", url)

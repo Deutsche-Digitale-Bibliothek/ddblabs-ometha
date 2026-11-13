@@ -115,6 +115,9 @@ Nach dem Verlassen des Base-URL-Felds (oder per Klick auf den Globus-Button nebe
 | **Parallele Downloads**   | Anzahl gleichzeitiger `GetRecord`-Anfragen (Standard: 4)                |
 | **Timeout (s)**           | Wartezeit zwischen Anfragen in Sekunden (Standard: 0)                   |
 | **Exportformat**          | `xml` oder `json`                                                       |
+| **Gelöschte Records**     | `keep` (Standard), `skip` oder `folder` – siehe [Gelöschte Records](#gelöschte-records) |
+| **Gentle Mode**           | Schalter für empfindliche Schnittstellen – siehe [Gentle Mode](#gentle-mode) |
+| **Rate Limit (s)**        | Mindestabstand zwischen Requests in Sekunden (0 = kein Limit)           |
 
 ### Harvesting starten
 
@@ -152,6 +155,14 @@ Optionale Parameter:
 - `-p/--parallel`: Parallele Downloads via `GetRecord` (Standard: automatisch basierend auf ID-Anzahl, max. 100)
 - `-e/--exporttype`: Exportformat `xml` (Standard) oder `json`
 - `--debug`: Debugging aktivieren (verboser Output)
+- `--gentle`: Aktiviert den Gentle Mode für empfindliche Schnittstellen (siehe [Gentle Mode](#gentle-mode))
+- `--ratelimit`: Mindestabstand zwischen Requests in Sekunden (unabhängig von `--gentle` nutzbar)
+- `--deleted`: Umgang mit gelöschten Records: `keep` (Standard), `skip` oder `folder` (siehe [Gelöschte Records](#gelöschte-records))
+- `--batchsize`: Aufteilung der Downloads in Unterordner `part_0001`, `part_0002` … mit je dieser Anzahl Dateien (Standard: keine Unterordner)
+- `--sort-invalid`: Records ohne Element-Inhalt unterhalb von `<metadata>` in `_invalid/` verschieben (Standard: aus)
+- `--summary`: Strukturierte XML-Zusammenfassung des Laufs schreiben (`_ometha_<datengeber>_summary.xml`, Standard: aus)
+
+Kann ein SSL-Zertifikat nicht validiert werden, protokolliert Ometha das einmalig und schaltet die Zertifikatsprüfung für den Rest des Laufs ab.
 
 ## Harvesten mit Konfigurationsdateien (`config`)
 
@@ -161,7 +172,7 @@ Ometha unterstützt Harvesting über Konfigurationsdateien. So können Harvestin
 ometha conf -c saarland.yaml
 ```
 
-Mit dem optionalen Parameter `-a` bzw. `--auto` wird der **Automatikmodus** aktiviert: Beim Start wird `until-Datum` auf den aktuellen Zeitpunkt gesetzt, nach erfolgreichem Harvesting wird `from-Datum` aktualisiert. Beim nächsten Lauf ist damit automatisch der Zeitraum seit dem letzten Harvesting eingestellt. Ometha verwendet dabei das vollständige Datetime-Format (`YYYY-MM-DDThh:mm:ssZ`), sofern die Schnittstelle das unterstützt.
+Mit dem optionalen Parameter `-a` bzw. `--auto` wird der **Automatikmodus** aktiviert: Beim Start wird `untildate` auf den aktuellen Zeitpunkt gesetzt, nach erfolgreichem Harvesting wird `fromdate` aktualisiert. Beim nächsten Lauf ist damit automatisch der Zeitraum seit dem letzten Harvesting eingestellt. Ometha verwendet dabei das vollständige Datetime-Format (`YYYY-MM-DDThh:mm:ssZ`), sofern die Schnittstelle das unterstützt.
 
 Beispiel für eine Konfigurationsdatei:
 
@@ -190,7 +201,7 @@ debug: false
 
 Pflichtfelder sind `baseurl` und `metadataPrefix`. Der Key `debug` nimmt nur `true` und `false` an, `timeout` nur Zahlen. Datumswerte können als String (`'2024-01-15'`) oder als ISO8601-Datetime (`'2024-01-15T10:00:00Z'`) angegeben werden. Alle anderen Keys sind optional und können `null` sein.
 
-Im `--auto`-Modus verwaltet Ometha zusätzlich die Keys `from-Datum` und `until-Datum` (mit Bindestrich) direkt in der Konfigurationsdatei. Diese haben Vorrang vor `fromdate`/`untildate`.
+Im `--auto`-Modus verwaltet Ometha die Keys `fromdate` und `untildate` direkt in der Konfigurationsdatei. Die alten Keys `from-Datum`/`until-Datum` (bis 2.x) werden nur noch gelesen, wenn `fromdate`/`untildate` fehlen. Zusätzlich verstehen Konfigurationsdateien `batchsize`, `sortinvalid: true` und `summary: true`.
 
 Kommandozeilen-Parameter für den `conf`-Modus:
 
@@ -229,11 +240,11 @@ outputfolder: /data/harvest
 timeout: 5
 debug: false
 # Wird von Ometha automatisch verwaltet (--auto):
-from-Datum: '2026-01-01T00:00:00Z'
-until-Datum: null
+fromdate: '2026-01-01T00:00:00Z'
+untildate: null
 ```
 
-Die Schlüssel `from-Datum` und `until-Datum` werden von Ometha im Auto-Modus automatisch nach jedem Lauf aktualisiert. Alternativ können `fromdate` und `untildate` (ohne Bindestrich) für manuell gesetzte Zeitgrenzen verwendet werden.
+Die Schlüssel `fromdate` und `untildate` werden von Ometha im Auto-Modus automatisch nach jedem Lauf aktualisiert.
 
 ### Stündlicher Cron-Job
 
@@ -242,7 +253,7 @@ Die Schlüssel `from-Datum` und `until-Datum` werden von Ometha im Auto-Modus au
 0 * * * * ometha conf -c /etc/ometha/sulb.yaml --auto --no-log --cleanup-on-empty >> /var/log/ometha-sulb.log 2>&1
 ```
 
-- `--auto`: Aktualisiert `from-Datum`/`until-Datum` in der Konfigurationsdatei automatisch
+- `--auto`: Aktualisiert `fromdate`/`untildate` in der Konfigurationsdatei automatisch
 - `--no-log`: Kein separates Logfile im Ausgabeordner (der Cron-Job leitet stdout/stderr selbst in `/var/log/ometha-sulb.log`)
 - `--cleanup-on-empty`: Leere Zeitstempel-Ordner werden gelöscht, wenn in der Periode keine neuen Records vorhanden waren – verhindert das Ansammeln leerer Verzeichnisse
 
@@ -307,7 +318,7 @@ optional arguments:
 
 ## Errorhandling: Abbruch beim Harvesten der OAI-Identifier
 
-Während des ID-Harvestings speichert Ometha automatisch alle 1000 IDs einen Checkpoint: Die aktuelle `resumptionToken` wird in `resumption_token_latest.txt` im Ausgabeordner geschrieben. Bei einem Verbindungsabbruch wird zusätzlich eine zeitgestempelte Datei `resumption_token_<timestamp>.txt` angelegt.
+Während des ID-Harvestings speichert Ometha automatisch alle 1000 IDs einen Checkpoint: Die aktuelle `resumptionToken` wird in `resumption_token_latest_<timestamp>.yaml` im Ausgabeordner geschrieben. Bei einem Verbindungsabbruch wird zusätzlich eine zeitgestempelte Datei `resumption_token_<timestamp>.yaml` angelegt.
 
 Falls beim Harvesten der OAI-IDs etwas schief geht, reicht es, sich den letzten angezeigten Resumption-Token zu notieren (bzw. in der Checkpoint-Datei oder Log-Datei zu schauen) und Ometha dann mit dem zusätzlichen Parameter `--resumptiontoken=resumptiontoken` auszuführen bzw. beim interaktiven Modus die Option `[R]` zu wählen:
 
@@ -316,6 +327,88 @@ ometha default -b https://oai.schnittstelle.de -m metadataprefix -d ordnername -
 ```
 
 (Hier ist darauf zu achten, dass man immer `--resumptiontoken=` nutzt, da es durchaus ResumptionTokens gibt, die mit einem Bindestrich anfangen und somit im Kommandozeilenmodus als neuer Parameter verstanden würden, wenn man `--resumptiontoken -1dsada-2wdss` eingeben würde. Die verkürzte Option `-r` ist daher auch deaktiviert.)
+
+## Gentle Mode
+
+Für empfindliche OAI-Schnittstellen, die bei zu vielen parallelen Anfragen mit Fehlern oder Sperren reagieren, bietet Ometha einen Gentle Mode mit konservativen Defaults:
+
+| Parameter           | Normal       | Gentle Mode |
+|---------------------|--------------|-------------|
+| Parallele Downloads | automatisch  | 1           |
+| Timeout             | 20 s         | 30 s        |
+| Rate Limit          | keins        | 20 s        |
+
+```shell
+ometha default -b https://oai.schnittstelle.de -m metadataprefix --gentle
+```
+
+Alle drei Werte lassen sich im Gentle Mode noch überschreiben:
+
+```shell
+# Gentle Mode, aber mit 5s Rate Limit statt 20s
+ometha default -b https://oai.schnittstelle.de -m metadataprefix --gentle --ratelimit 5
+
+# Gentle Mode, aber mit 2 parallelen Downloads
+ometha default -b https://oai.schnittstelle.de -m metadataprefix --gentle -p 2
+```
+
+Das Rate Limit (`--ratelimit`) ist auch unabhängig vom Gentle Mode nutzbar:
+
+```shell
+# 3 parallele Downloads, aber mindestens 10s zwischen den Requests
+ometha default -b https://oai.schnittstelle.de -m metadataprefix -p 3 --ratelimit 10
+```
+
+Das Rate Limit wird global über alle Worker-Threads hinweg erzwungen – unabhängig von der Anzahl paralleler Downloads kommt also immer nur ein Request pro Intervall durch.
+
+In der YAML-Konfigurationsdatei:
+
+```yaml
+ratelimit: 10
+```
+
+Auch im `conf`-Modus lässt sich der Gentle Mode aktivieren, entweder per Flag oder per YAML-Key:
+
+```shell
+ometha conf -c config.yaml --gentle
+```
+
+```yaml
+gentle: true
+# optional: einzelne Defaults überschreiben
+numberofprocesses: 2
+ratelimit: 5
+```
+
+Steht `gentle` in der YAML-Datei, hat dieser Wert Vorrang vor dem CLI-Flag (`gentle: false` schaltet den Modus also auch bei `--gentle` aus). Explizit gesetzte Werte (`numberofprocesses`, `timeout`, `ratelimit`) überschreiben die Gentle-Defaults.
+
+## Gelöschte Records
+
+OAI-PMH kennzeichnet gelöschte Datensätze mit `status="deleted"` im Record-Header. Ometha bietet drei Optionen für den Umgang damit:
+
+| Wert     | Verhalten                                                            |
+|----------|----------------------------------------------------------------------|
+| `keep`   | Gelöschte Records werden normal gespeichert (Standard)               |
+| `skip`   | Gelöschte Records werden verworfen und nur geloggt                   |
+| `folder` | Gelöschte Records werden in einen `_deleted/`-Unterordner verschoben |
+
+```shell
+# Gelöschte Records überspringen
+ometha default -b https://oai.schnittstelle.de -m metadataprefix --deleted skip
+
+# Gelöschte Records in _deleted/ verschieben
+ometha default -b https://oai.schnittstelle.de -m metadataprefix --deleted folder
+```
+
+In der YAML-Konfigurationsdatei:
+
+```yaml
+deleted: skip
+```
+
+Am Ende jedes Harvesting-Laufs gibt Ometha eine Zusammenfassung der übersprungenen bzw. verschobenen gelöschten Records aus.
+
+Mit `--sort-invalid` werden Records ohne auswertbaren Metadaten-Inhalt (kein Element unterhalb von `//metadata/*`) unabhängig von der `--deleted`-Einstellung in einen `_invalid/`-Unterordner verschoben und geloggt. Ohne den Parameter werden alle Records normal gespeichert.
 
 # Konfigurationsdatei
 

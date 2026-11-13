@@ -36,8 +36,22 @@ def parseargs() -> dict[str, Any]:
             "--timeout",
             "-t",
             type=int,
-            help="Timeout between requests in seconds (default: 0)",
-            default=0,
+            help="Timeout between requests in seconds (default: 20, or 30 in --gentle mode)",
+            default=None,
+        )
+        s.add_argument(
+            "--maxtimeout",
+            type=int,
+            help="Hard ceiling for adaptive timeout in seconds (default: 120)",
+            default=None,
+            dest="max_timeout",
+        )
+        s.add_argument(
+            "--batchsize",
+            type=int,
+            help="Split output into part_XXXX subfolders of this many files (default: no subfolders)",
+            default=None,
+            dest="batch_size",
         )
         s.add_argument("--outputfolder", "-o", help="Output folder", default=os.getcwd())
         s.add_argument(
@@ -47,14 +61,61 @@ def parseargs() -> dict[str, Any]:
             action="store_true",
         )
         s.add_argument("--exporttype", "-e", help="Export format (xml/json)", default="xml")
+        s.add_argument(
+            "--gentle",
+            dest="gentle",
+            action="store_true",
+            default=False,
+            help="Conservative mode for sensitive endpoints: 1 thread, 30s timeout, 20s rate limit (all overridable)",
+        )
+        s.add_argument(
+            "--ratelimit",
+            type=float,
+            default=None,
+            dest="ratelimit",
+            help="Minimum seconds between requests (default: none)",
+        )
+        s.add_argument(
+            "--deleted",
+            dest="deleted_handling",
+            choices=["keep", "skip", "folder"],
+            default="keep",
+            help="How to handle deleted records: keep (default), skip, or move to _deleted/ folder",
+        )
+        s.add_argument(
+            "--summary",
+            dest="summary",
+            action="store_true",
+            default=False,
+            help="Write a structured XML run summary (_ometha_<datengeber>_summary.xml)",
+        )
+        s.add_argument(
+            "--sort-invalid",
+            dest="sort_invalid",
+            action="store_true",
+            default=False,
+            help="Move records without element content below <metadata> to _invalid/",
+        )
 
     def convert_common_args(args):
-        PRM["timeout"], PRM["n_procs"], PRM["out_f"], PRM["debug"], PRM["exp_type"] = (
-            args.timeout,
-            args.parallel,
-            args.outputfolder,
+        from .helpers import GENTLE_DEFAULTS
+        PRM["gentle"] = args.gentle
+        PRM["deleted_handling"] = args.deleted_handling
+        PRM["summary"], PRM["sort_invalid"] = args.summary, args.sort_invalid
+        if args.gentle:
+            PRM["n_procs"]   = args.parallel  if args.parallel  is not None else GENTLE_DEFAULTS["n_procs"]
+            PRM["timeout"]   = args.timeout   if args.timeout   is not None else GENTLE_DEFAULTS["timeout"]
+            PRM["ratelimit"] = args.ratelimit if args.ratelimit is not None else GENTLE_DEFAULTS["ratelimit"]
+        else:
+            PRM["n_procs"]   = args.parallel
+            PRM["timeout"]   = args.timeout if args.timeout is not None else 20
+            PRM["ratelimit"] = args.ratelimit
+        PRM["out_f"] = os.path.expanduser(args.outputfolder) if args.outputfolder else args.outputfolder
+        PRM["debug"], PRM["exp_type"], PRM["max_timeout"], PRM["batch_size"] = (
             args.debug,
             args.exporttype,
+            args.max_timeout,
+            args.batch_size,
         )
 
     subparsers = {
@@ -133,10 +194,31 @@ def parseargs() -> dict[str, Any]:
                 help="Kein Logfile anlegen (sinnvoll für Cron-Betrieb mit externem Logging).",
             )
             prs.add_argument(
+                "--gentle",
+                dest="gentle",
+                action="store_true",
+                default=False,
+                help="Conservative mode (see default command). A 'gentle' key in the YAML file takes precedence.",
+            )
+            prs.add_argument(
                 "--cleanup-on-empty",
                 dest="cleanup_empty",
                 action="store_true",
                 help="Ausgabeordner löschen wenn keine Datensätze geharvestet wurden.",
+            )
+            prs.add_argument(
+                "--summary",
+                dest="summary",
+                action="store_true",
+                default=False,
+                help="Write a structured XML run summary (_ometha_<datengeber>_summary.xml)",
+            )
+            prs.add_argument(
+                "--sort-invalid",
+                dest="sort_invalid",
+                action="store_true",
+                default=False,
+                help="Move records without element content below <metadata> to _invalid/",
             )
         elif cmd == "auto":
             add_common_args(prs)
@@ -194,8 +276,9 @@ def parseargs() -> dict[str, Any]:
         f_auto, f_manual, u_auto, u_manual = read_yaml_file(
             PRM["conf_f"], ["from-Datum", "fromdate", "until-Datum", "untildate"]
         )
-        f_date_raw = f_auto or f_manual
-        u_date_raw = u_auto or u_manual
+        # Auto-Modus schreibt "fromdate"/"untildate" → diese haben Vorrang
+        f_date_raw = f_manual or f_auto
+        u_date_raw = u_manual or u_auto
         PRM["f_date"] = _resolve_date(str(f_date_raw)) if f_date_raw else None
         PRM["u_date"] = _resolve_date(str(u_date_raw)) if u_date_raw else None
         if f_date_raw and not PRM["f_date"]:
@@ -216,9 +299,31 @@ def parseargs() -> dict[str, Any]:
             PRM["dat_geb"] = read_yaml_file(PRM["conf_f"], ["name"])[0]
 
         # outputfolder: if none is defined use the current working directory
-        PRM["out_f"] = read_yaml_file(PRM["conf_f"], ["outputfolder"], os.getcwd())[0] or os.getcwd()
+        PRM["out_f"] = os.path.expanduser(read_yaml_file(PRM["conf_f"], ["outputfolder"], os.getcwd())[0] or os.getcwd())
         # n_procs: read from config file, None means auto-scale based on ID count
         PRM["n_procs"] = read_yaml_file(PRM["conf_f"], ["numberofprocesses"])[0]
+        # batch_size: read from config file, None means no subfolders
+        PRM["batch_size"] = read_yaml_file(PRM["conf_f"], ["batchsize"])[0]
+        # max_timeout: read from config file, None means default (120s)
+        PRM["max_timeout"] = read_yaml_file(PRM["conf_f"], ["maxtimeout"])[0]
+        # deleted_handling: read from config file, default "keep"
+        PRM["deleted_handling"] = read_yaml_file(PRM["conf_f"], ["deleted"])[0] or "keep"
+        # ratelimit: read from config file
+        PRM["ratelimit"] = read_yaml_file(PRM["conf_f"], ["ratelimit"])[0]
+        # gentle: YAML-Wert hat Vorrang vor dem CLI-Flag; fehlende Werte werden mit GENTLE_DEFAULTS gefüllt
+        from .helpers import GENTLE_DEFAULTS
+        gentle_yaml = read_yaml_file(PRM["conf_f"], ["gentle"])[0]
+        PRM["gentle"] = bool(gentle_yaml) if gentle_yaml is not None else args.gentle
+        if PRM["gentle"]:
+            for key, default_key in (("n_procs", "n_procs"), ("timeout", "timeout"), ("ratelimit", "ratelimit")):
+                if PRM[key] is None:
+                    PRM[key] = GENTLE_DEFAULTS[default_key]
+        # summary / sortinvalid: YAML-Wert hat Vorrang vor dem CLI-Flag
+        summary_yaml, sort_invalid_yaml = read_yaml_file(PRM["conf_f"], ["summary", "sortinvalid"])
+        PRM["summary"] = bool(summary_yaml) if summary_yaml is not None else args.summary
+        PRM["sort_invalid"] = bool(sort_invalid_yaml) if sort_invalid_yaml is not None else args.sort_invalid
+        # resumptiontoken: gesetzt wenn Checkpoint-YAML verwendet wird
+        PRM["res_tok"] = read_yaml_file(PRM["conf_f"], ["resumptiontoken"])[0]
         # Clean up base URL and prefix if they are not None
         if PRM["b_url"] is not None:
             PRM["b_url"] = re.sub(r"/\s$", "", PRM["b_url"])
