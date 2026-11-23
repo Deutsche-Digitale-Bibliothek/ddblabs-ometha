@@ -38,6 +38,7 @@ from .helpers import (
     print_and_log,
     safe_get,
 )
+from .i18n import t
 
 
 MEASURE_INTERVAL = 5  # Sekunden zwischen zwei Messungen des adaptiven Controllers
@@ -149,7 +150,7 @@ def _build_yaml_doc(PRM: dict, extra: dict | None = None) -> dict:
     return doc
 
 
-def write_checkpoint_yaml(token: str, id_count: int, PRM: dict, label: str = "Laufender Checkpoint") -> str:
+def write_checkpoint_yaml(token: str, id_count: int, PRM: dict, kind: str = "running") -> str:
     """Schreibt einen Checkpoint mit Resumption Token als valide YAML-Datei.
 
     Verwendet yaml.safe_dump() statt f-Strings, damit None → null und komplexe
@@ -159,24 +160,24 @@ def write_checkpoint_yaml(token: str, id_count: int, PRM: dict, label: str = "La
         token: Aktueller Resumption Token.
         id_count: Anzahl bisher gesammelter IDs.
         PRM: Parameter-Dictionary.
-        label: Beschriftung im Information-Feld.
+        kind: "running", "abort" oder "final" (bestimmt Dateiname und Beschriftung).
 
     Returns:
         Pfad der geschriebenen Datei.
     """
-    is_abort = "Abbruch" in label
+    is_abort = kind == "abort"
     filename = f"resumption_token_{TIMESTR}.yaml" if is_abort else f"resumption_token_latest_{TIMESTR}.yaml"
     token_file = os.path.join(PRM.get("out_f", "."), filename)
 
     doc = {
-        "Information": f"{label} erzeugt mit Ometha {__version__}",
+        "Information": t("harvester.checkpoint_info", label=t(f"harvester.checkpoint_{kind}"), version=__version__),
         "date": TIMESTR,
         **_build_yaml_doc(PRM, extra={"resumptiontoken": token}),
     }
     with open(token_file, "w", encoding="utf-8") as f:
         yaml.safe_dump(doc, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
-        f.write(f"# IDs bisher gesammelt: {id_count}\n")
-        f.write(f"# Fortsetzen mit: ometha conf -c {token_file}\n")
+        f.write(f"{t('harvester.checkpoint_ids_so_far', count=id_count)}\n")
+        f.write(f"{t('harvester.checkpoint_resume_with', path=token_file)}\n")
     return token_file
 
 
@@ -200,7 +201,7 @@ def preview_list_size(url: str, session: Session) -> int | None:
         response.raise_for_status()
         etree.XML(response.content)  # nur Validität prüfen, root wird nicht gebraucht
     except Exception as e:
-        logger.warning(f"ListSize-Vorschau fehlgeschlagen für {url}: {e}")
+        logger.warning(t("harvester.list_size_preview_failed", url=url, error=e))
         return None
     list_size = re.search(r"completeListSize=[\"|\'](\d+)[\"|\']", response.text)
     return int(list_size.group(1)) if list_size else None
@@ -232,14 +233,14 @@ def get_identifier_pages(
                 if retry_count >= max_retries:
                     if last_token:
                         try:
-                            token_file = write_checkpoint_yaml(last_token, total_yielded, PRM, label="Abbruch-Checkpoint")
-                            print(f"\n{INFO}Checkpoint gespeichert: {token_file}")
+                            token_file = write_checkpoint_yaml(last_token, total_yielded, PRM, kind="abort")
+                            print(f"\n{INFO}{t('harvester.checkpoint_saved', path=token_file)}")
                         except Exception as save_err:
-                            logger.error(f"Could not save resumption token: {save_err}")
+                            logger.error(t("harvester.token_save_failed", error=save_err))
                     handle_error(e, PRM["mode"], url)
                 else:
                     wait_time = 10 * (2**retry_count)
-                    print(f"\n{ACHTUNG}Retry {retry_count}/{max_retries} after {wait_time}s...")
+                    print(f"\n{ACHTUNG}{t('harvester.retry', n=retry_count, max=max_retries, wait=wait_time)}")
                     time.sleep(wait_time)
                     continue
 
@@ -247,7 +248,7 @@ def get_identifier_pages(
             first_page = False
             list_size = re.search(r"completeListSize=[\"|\'](\d+)[\"|\']", response.text)
             print_and_log(
-                f"{INFO}Angegebene ListSize: {list_size.group(1)}" if list_size else f"{INFO}Keine ListSize angegeben",
+                f"{INFO}{t('harvester.list_size_given', size=list_size.group(1))}" if list_size else f"{INFO}{t('harvester.list_size_missing')}",
                 logger, "info",
             )
             if list_size and on_list_size:
@@ -259,7 +260,7 @@ def get_identifier_pages(
             last_token = token
         else:
             token = None
-        logger.info(f"Token: {token}") if PRM["debug"] else None
+        logger.info(t("harvester.debug_token", token=token)) if PRM["debug"] else None
 
         page_ids = [ids.text for ids in root.findall(f".//{NAMESPACE}identifier")]
         total_yielded += len(page_ids)
@@ -268,14 +269,14 @@ def get_identifier_pages(
             try:
                 write_checkpoint_yaml(token, total_yielded, PRM)
             except Exception as save_err:
-                logger.warning(f"Could not save checkpoint: {save_err}")
+                logger.warning(t("harvester.checkpoint_save_failed", error=save_err))
 
         yield page_ids
 
         if not token:
             if last_token:
                 try:
-                    write_checkpoint_yaml(last_token, total_yielded, PRM, label="Abschluss-Checkpoint")
+                    write_checkpoint_yaml(last_token, total_yielded, PRM, kind="final")
                 except Exception:
                     pass
             break
@@ -295,11 +296,11 @@ def get_identifier(
     try:
         for page_ids in get_identifier_pages(PRM, url, session, on_list_size):
             id_list.extend(page_ids)
-            spinner.text = "Lade IDs: " + str(len(id_list))
+            spinner.text = t("harvester.spinner_loading", count=len(id_list))
     finally:
-        spinner.text = f"Identifier Harvesting beendet. Insgesamt {len(id_list)} IDs bekommen."
+        spinner.text = t("harvester.spinner_done", count=len(id_list))
         spinner.ok("✓")
-        logger.info("Identifier Harvesting beendet.")
+        logger.info(t("harvester.identifier_harvest_done"))
     return id_list
 
 
@@ -362,7 +363,7 @@ def harvest_files(
                     json.dump(xml_data, of, indent=2)
                 return True
             except Exception as e:
-                logger.warning(f"XML→JSON-Konvertierung fehlgeschlagen für {oai_id}: {e}")
+                logger.warning(t("harvester.xml_json_failed", oai_id=oai_id, error=e))
                 return False
         else:
             with open(os.path.join(folder, f"{filename}.xml"), "w", encoding="utf8") as of:
@@ -392,8 +393,8 @@ def harvest_files(
 
     if isinstance(ids, list):
         if not ids:
-            log_critical_and_print_and_exit(f"{SEP_LINE}Keine Identifier bekommen, breche ab.", PRM["mode"])
-        print_and_log(f"{SEP_LINE}Harveste {len(ids)} IDs.", logger, "info")
+            log_critical_and_print_and_exit(f"{SEP_LINE}{t('harvester.harvest_no_ids')}", PRM["mode"])
+        print_and_log(f"{SEP_LINE}{t('harvester.harvesting_ids', count=len(ids))}", logger, "info")
 
     # ------------------------------------------------------------------ #
     # Gemeinsame Steuerparameter                                           #
@@ -461,14 +462,14 @@ def harvest_files(
                             delta_w = min(STEP_UP, MAX_WORKERS - n_workers)
                             n_workers += delta_w
                             limit.grow(delta_w)
-                            logger.info(f"[AdaptivePool] Durchsatz ↑ {avg_now:.2f} f/s (+{change*100:.1f}%) → Worker {old} → {n_workers}")
+                            logger.info(t("harvester.pool_throughput_up", rate=f"{avg_now:.2f}", pct=f"{change*100:.1f}", old=old, new=n_workers))
                         elif change < -THROUGHPUT_TOL and n_workers > MIN_WORKERS:
                             delta_w = min(STEP_DOWN, n_workers - MIN_WORKERS)
                             n_workers -= delta_w
                             limit.shrink(delta_w)
-                            logger.info(f"[AdaptivePool] Durchsatz ↓ {avg_now:.2f} f/s ({change*100:.1f}%) → Worker {old} → {n_workers}")
+                            logger.info(t("harvester.pool_throughput_down", rate=f"{avg_now:.2f}", pct=f"{change*100:.1f}", old=old, new=n_workers))
                         else:
-                            logger.debug(f"[AdaptivePool] Durchsatz stabil {avg_now:.2f} f/s ({change*100:+.1f}%) → Worker bleibt {n_workers}")
+                            logger.debug(t("harvester.pool_throughput_stable", rate=f"{avg_now:.2f}", pct=f"{change*100:+.1f}", workers=n_workers))
                         worker_snapshots.append(n_workers)
 
             # Timeout anpassen – nur wenn ein Timeout gesetzt ist. timeout=0 heißt
@@ -481,18 +482,18 @@ def harvest_files(
                     old_t = current_timeout[0]
                     if median_lat > old_t * (1 + LATENCY_TOL) and old_t < MAX_TIMEOUT:
                         current_timeout[0] = min(old_t + TIMEOUT_STEP, MAX_TIMEOUT)
-                        logger.info(f"[AdaptiveTimeout] Latenz ↑ Median={median_lat:.2f}s → Timeout {old_t:.0f}s → {current_timeout[0]:.0f}s")
+                        logger.info(t("harvester.timeout_latency_up", median=f"{median_lat:.2f}", old=f"{old_t:.0f}", new=f"{current_timeout[0]:.0f}"))
                     elif median_lat < old_t * (1 - LATENCY_TOL) and old_t > MIN_TIMEOUT:
                         current_timeout[0] = max(old_t - TIMEOUT_STEP, MIN_TIMEOUT)
-                        logger.info(f"[AdaptiveTimeout] Latenz ↓ Median={median_lat:.2f}s → Timeout {old_t:.0f}s → {current_timeout[0]:.0f}s")
+                        logger.info(t("harvester.timeout_latency_down", median=f"{median_lat:.2f}", old=f"{old_t:.0f}", new=f"{current_timeout[0]:.0f}"))
                     else:
-                        logger.debug(f"[AdaptiveTimeout] Latenz stabil Median={median_lat:.2f}s → Timeout bleibt {old_t:.0f}s")
+                        logger.debug(t("harvester.timeout_latency_stable", median=f"{median_lat:.2f}", old=f"{old_t:.0f}"))
                     timeout_snapshots.append(current_timeout[0])
 
     def download(oai_id: str, index: int) -> dict[str, str] | None:
         """Lädt einen Record per GetRecord und speichert ihn."""
         with lock:
-            t = current_timeout[0] or None
+            req_timeout = current_timeout[0] or None
         url = f"{PRM['b_url']}?verb=GetRecord&metadataPrefix={PRM['pref']}&identifier={oai_id}"
         export_type = PRM["exp_type"]
         ratelimit = PRM.get("ratelimit")
@@ -504,41 +505,41 @@ def harvest_files(
                 _last_request_time[0] = time.monotonic()
         t_start = time.monotonic()
         try:
-            with safe_get(session, url, timeout=t) as resp:
+            with safe_get(session, url, timeout=req_timeout) as resp:
                 with lock:
                     latency_window.append(time.monotonic() - t_start)
                 if resp.status_code != 200:
-                    logger.critical(f"Statuscode {resp.status_code} bei {url}")
+                    logger.critical(t("harvester.download_status", status=resp.status_code, url=url))
                     return {"failed_download": oai_id}
                 if errors := re.findall(r'error\scode="(.+)">(.+)</error>', resp.text):
-                    logger.warning(f"Datei {url} konnte nicht geharvestet werden ('{errors[0][0]}')")
+                    logger.warning(t("harvester.download_error", url=url, error=errors[0][0]))
                     return {"failed_download": oai_id}
                 root = _parse_record(resp.content)
                 if is_deleted(root):
                     deleted_handling = PRM.get("deleted_handling", "keep")
                     if deleted_handling == "skip":
-                        logger.info(f"Gelöschter Record übersprungen: {oai_id}")
+                        logger.info(t("harvester.record_skipped_deleted", oai_id=oai_id))
                         return {"skipped_deleted": oai_id}
                     elif deleted_handling == "folder":
                         deleted_folder = os.path.join(folder, "_deleted")
                         os.makedirs(deleted_folder, exist_ok=True)
                         if not save_file(oai_id, deleted_folder, resp.text, export_type):
                             return {"failed_download": oai_id}
-                        logger.info(f"Gelöschter Record in _deleted/ verschoben: {oai_id}")
+                        logger.info(t("harvester.record_moved_deleted", oai_id=oai_id))
                         return {"deleted": oai_id}
                     else:
-                        logger.info(f"Gelöschter Record gespeichert (keep): {oai_id}")
+                        logger.info(t("harvester.record_saved_deleted", oai_id=oai_id))
                 elif PRM.get("sort_invalid") and is_invalid(root):
                     invalid_folder = os.path.join(folder, "_invalid")
                     os.makedirs(invalid_folder, exist_ok=True)
                     if not save_file(oai_id, invalid_folder, resp.text, export_type):
                         return {"failed_download": oai_id}
-                    logger.warning(f"Ungültiger Record in _invalid/ verschoben: {oai_id}")
+                    logger.warning(t("harvester.record_moved_invalid", oai_id=oai_id))
                     return {"invalid": oai_id}
                 if not save_file(oai_id, get_subfolder(folder, index), resp.text, export_type):
                     return {"failed_download": oai_id}
         except RequestException as e:
-            logger.warning(f"Datei {url} wurde aufgrund eines {type(e).__name__} übersprungen: {e}")
+            logger.warning(t("harvester.request_failed", url=url, error_type=type(e).__name__, error=e))
             return {"failed_id": oai_id}
         return None
 
@@ -553,7 +554,7 @@ def harvest_files(
         try:
             result = download(oai_id, index)
         except Exception as e:
-            logger.exception(f"Unerwarteter Fehler bei {oai_id}: {e}")
+            logger.exception(t("harvester.unexpected_error", oai_id=oai_id, error=e))
             result = {"failed_download": oai_id}
         finally:
             if not (result and ("failed_download" in result or "failed_id" in result)):
@@ -565,8 +566,8 @@ def harvest_files(
     controller_thread = threading.Thread(target=adaptive_controller, daemon=True)
     controller_thread.start()
     logger.info(
-        f"[AdaptivePool] Start mit {n_workers} Workern (max. {MAX_WORKERS}), "
-        f"Timeout {current_timeout[0]:.0f}s (max. {MAX_TIMEOUT}s)"
+        t("harvester.pool_start", workers=n_workers, max_workers=MAX_WORKERS,
+          timeout=f"{current_timeout[0]:.0f}", max_timeout=MAX_TIMEOUT)
     )
 
     producer_thread = threading.Thread(target=producer, daemon=True)
@@ -585,7 +586,7 @@ def harvest_files(
     # laufenden Downloads (inkl. Timeouts und Retries) abwarten.
     executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
     try:
-        with tqdm(total=initial_total, desc="Harveste...", unit=" files", dynamic_ncols=True) as pbar:
+        with tqdm(total=initial_total, desc=t("harvester.progress_desc"), unit=t("harvester.progress_unit"), dynamic_ncols=True) as pbar:
 
             def on_future_done(future) -> None:
                 """Aktualisiert Fortschrittsbalken sofort bei Abschluss eines Downloads."""
@@ -628,8 +629,8 @@ def harvest_files(
     t_max = max(timeout_snapshots)
     t_avg = sum(timeout_snapshots) / len(timeout_snapshots)
     print_and_log(
-        f"[AdaptivePool] Worker-Statistik:  min. {w_min}, max. {w_max}, Ø {w_avg:.1f} Threads\n"
-        f"[AdaptiveTimeout] Timeout-Statistik: min. {t_min:.0f}s, max. {t_max:.0f}s, Ø {t_avg:.1f}s",
+        t("harvester.pool_stats", wmin=w_min, wmax=w_max, wavg=f"{w_avg:.1f}",
+          tmin=f"{t_min:.0f}", tmax=f"{t_max:.0f}", tavg=f"{t_avg:.1f}"),
         logger, "info",
     )
 
@@ -646,11 +647,11 @@ def harvest_files(
     moved_deleted   = failed_files.get("deleted", [])
     moved_invalid   = failed_files.get("invalid", [])
     if skipped_deleted:
-        print_and_log(f"{INFO}{len(skipped_deleted)} gelöschte Records übersprungen.", logger, "info")
+        print_and_log(f"{INFO}{t('harvester.skipped_deleted', count=len(skipped_deleted))}", logger, "info")
     if moved_deleted:
-        print_and_log(f"{INFO}{len(moved_deleted)} gelöschte Records in _deleted/ verschoben.", logger, "info")
+        print_and_log(f"{INFO}{t('harvester.moved_deleted', count=len(moved_deleted))}", logger, "info")
     if moved_invalid:
-        print_and_log(f"{INFO}{len(moved_invalid)} ungültige Records in _invalid/ verschoben.", logger, "info")
+        print_and_log(f"{INFO}{t('harvester.moved_invalid', count=len(moved_invalid))}", logger, "info")
 
     if stats is not None:
         total = len(failed_oaiids)
@@ -667,7 +668,7 @@ def harvest_files(
             }
         )
 
-    logger.info("Harvesting beendet")
+    logger.info(t("harvester.harvest_done"))
 
     return failed_download, failed_ids
 
@@ -679,7 +680,7 @@ def change_date(date: str, name: str, key: str) -> None:
     """
     if PRM["conf_m"] and PRM["auto_m"]:
         print_and_log(
-            f"{SEP_LINE}{INFO} Setze das {key} der Konfigurationsdatei {PRM['conf_f']} auf das aktuelle Datum",
+            f"{SEP_LINE}{INFO} {t('harvester.change_date', key=key, conf=PRM['conf_f'])}",
             logger,
             "info",
         )
@@ -706,7 +707,7 @@ def create_id_file(PRM: dict[str, Any], ids: list[str], folder: str, type: str |
     file = os.path.join(folder, f"_ometha_{type}_ids.yaml")
 
     doc = {
-        "Information": f"Liste erzeugt mit Ometha {__version__}",
+        "Information": t("harvester.id_list_created_with", version=__version__),
         "date": TIMESTR,
         **_build_yaml_doc(PRM),
     }
@@ -809,7 +810,7 @@ def read_yaml_file(file_path: str, keys: list[str], default: Any = None) -> list
                 result.append(value)
             return result
     except OSError:
-        log_critical_and_print_and_exit(f"\n{FEHLER} Datei {file_path} kann nicht gelesen werden.")
+        log_critical_and_print_and_exit(f"\n{FEHLER} {t('harvester.yaml_unreadable', path=file_path)}")
         sys.exit()
     except KeyError as e:
-        log_critical_and_print_and_exit(f"Der Eintrag für {e} fehlt in der YAML Datei {file_path}.")
+        log_critical_and_print_and_exit(t("harvester.yaml_key_missing", key=e, path=file_path))

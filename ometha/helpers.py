@@ -11,6 +11,8 @@ from requests import Response
 from tqdm import tqdm
 from requests.exceptions import ConnectionError, HTTPError, RetryError, SSLError, Timeout
 
+from .i18n import t
+
 # Defaults für den --gentle Modus (überschreibbar durch explizite Parameter)
 GENTLE_DEFAULTS = {
     "n_procs": 1,
@@ -20,9 +22,22 @@ GENTLE_DEFAULTS = {
 
 # define global variables reused throughout the code
 SEP_LINE = "--------------------------------------\n"
-ACHTUNG = f"{Fore.YELLOW}Achtung:\n {Fore.WHITE}"
-FEHLER = f"{Fore.RED}Fehler:\n  {Style.DIM}"
-INFO = f"{Fore.YELLOW}Information: {Fore.WHITE}"
+
+class _Label:
+    """Farbiges Label, dessen Text erst beim Formatieren übersetzt wird."""
+
+    def __init__(self, color: str, key: str, tail: str):
+        self.color, self.key, self.tail = color, key, tail
+
+    def __str__(self) -> str:
+        return f"{self.color}{t(self.key)}{self.tail}"
+
+    __format__ = lambda self, spec: format(str(self), spec)  # noqa: E731
+
+
+ACHTUNG = _Label(Fore.YELLOW, "helpers.label_warning", f"\n {Fore.WHITE}")
+FEHLER = _Label(Fore.RED, "helpers.label_error", f"\n  {Style.DIM}")
+INFO = _Label(Fore.YELLOW, "helpers.label_info", f" {Fore.WHITE}")
 TIMESTR = time.strftime("%Y-%m-%d_%H_%M_%SZ")
 OAITIMESTR = time.strftime("%Y-%m-%dT%H:%M:%SZ")
 NAMESPACE = "{http://www.openarchives.org/OAI/2.0/}"
@@ -123,7 +138,7 @@ def print_and_log(message: str, logger: Any, type: str, end: str = "\n") -> None
     # tqdm.write statt print: hält laufende Fortschrittsbalken (auch aus anderen
     # Threads, z. B. Pipelining) intakt, statt Text an die Balkenzeile zu hängen
     tqdm.write(message, end=end)
-    for placeholder in [SEP_LINE, ACHTUNG, INFO, FEHLER]:
+    for placeholder in [SEP_LINE, str(ACHTUNG), str(INFO), str(FEHLER)]:
         if placeholder in message:
             message = message.replace(placeholder, "")
     if type == "info":
@@ -142,25 +157,27 @@ def handle_error(e: Exception, mode: str | None, url: str | None = None) -> None
         url: URL that was being requested when the error occurred.
     """
     error_messages = {
-        Timeout: "Timeout determining list size. The API is not reachable.",
-        RetryError: "Identifier harvesting aborted due to too many retries. Is the API reachable?",
+        Timeout: t("helpers.timeout_error"),
+        RetryError: t("helpers.retry_error"),
     }
     if type(e) is ConnectionError:
         if "404" in str(e):
-            log_critical_and_print_and_exit("The API is not reachable. Is the URL correct?", mode)
+            log_critical_and_print_and_exit(t("helpers.api_unreachable"), mode)
         elif errors := re.findall(r"error\scode=['\"](.+)['\"]>(.*)<\\error", str(e)):
-            log_critical_and_print_and_exit(f"{FEHLER} API error: {errors[0][0]}/{errors[0][1]} at {url}", mode)
+            log_critical_and_print_and_exit(
+                f"{FEHLER} {t('helpers.api_error', code=errors[0][0], detail=errors[0][1], url=url)}", mode
+            )
     elif type(e) is HTTPError:
         status = e.response.status_code if e.response is not None else "unknown"
         log_critical_and_print_and_exit(
-            f"Identifier harvesting aborted due to HTTP {status} at {url}.",
+            t("helpers.http_error", status=status, url=url),
             mode,
             e,
         )
     elif type(e) in error_messages:
         log_critical_and_print_and_exit(error_messages[type(e)], mode, e)
     else:
-        log_critical_and_print_and_exit("An unexpected error occurred.", mode, e)
+        log_critical_and_print_and_exit(t("helpers.unexpected_error"), mode, e)
 
 
 def log_critical_and_print_and_exit(
@@ -178,10 +195,10 @@ def log_critical_and_print_and_exit(
     print(message)
     logger.critical(message)
     if exception:
-        logger.exception("Exception details:", exc_info=exception)
+        logger.exception(t("helpers.exception_details"), exc_info=exception)
         sys.exit()
     if mode == "ui":
-        input(f"{message}\nDrücken Sie Enter zum Beenden...")
+        input(f"{message}\n{t('helpers.press_enter_exit')}")
     sys.exit()
 
 
@@ -209,11 +226,8 @@ def safe_get(session, url: str, **kwargs) -> Response:
         return session.get(url, **kwargs)
     except SSLError as e:
         if session.verify is not False:
-            logger.warning(f"SSL-Zertifikatsprüfung fehlgeschlagen für {url}: {e}")
-            print(
-                f"{ACHTUNG}SSL-Zertifikat der Schnittstelle konnte nicht validiert werden "
-                f"({url}). Zertifikatsprüfung wird für diesen Lauf deaktiviert."
-            )
+            logger.warning(t("helpers.ssl_check_failed_log", url=url, error=e))
+            print(f"{ACHTUNG}{t('helpers.ssl_disabled', url=url)}")
             session.verify = False
         return session.get(url, **kwargs)
 
@@ -236,7 +250,7 @@ def isinvalid_xml_content(response: Response, url: str, mode: str) -> etree._Ele
         root = etree.XML(response.content)
     except etree.XMLSyntaxError as e:
         log_critical_and_print_and_exit(
-            f"XML Syntax Error in the API response, probably no valid XML ({url}): '{e}'",
+            t("helpers.xml_syntax_error", url=url, error=e),
             mode,
         )
         raise  # log_critical_and_print_and_exit always exits; this is unreachable but keeps root defined

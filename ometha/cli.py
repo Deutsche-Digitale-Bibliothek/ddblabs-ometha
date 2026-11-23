@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlparse
 from ._version import __version__
 from .harvester import read_yaml_file
 from .helpers import PRM, SEP_LINE, TIMESTR, resolve_date
+from .i18n import t
 
 _resolve_date = resolve_date
 
@@ -29,72 +30,72 @@ def parseargs() -> dict[str, Any]:
             "--parallel",
             "-p",
             type=int,
-            help="Number of parallel downloads (default: auto)",
+            help=t("cli.help_parallel"),
             default=None,
         )
         s.add_argument(
             "--timeout",
             "-t",
             type=int,
-            help="Timeout between requests in seconds (default: 20, or 30 in --gentle mode)",
+            help=t("cli.help_timeout"),
             default=None,
         )
         s.add_argument(
             "--maxtimeout",
             type=int,
-            help="Hard ceiling for adaptive timeout in seconds (default: 120)",
+            help=t("cli.help_maxtimeout"),
             default=None,
             dest="max_timeout",
         )
         s.add_argument(
             "--batchsize",
             type=int,
-            help="Split output into part_XXXX subfolders of this many files (default: no subfolders)",
+            help=t("cli.help_batchsize"),
             default=None,
             dest="batch_size",
         )
-        s.add_argument("--outputfolder", "-o", help="Output folder", default=os.getcwd())
+        s.add_argument("--outputfolder", "-o", help=t("cli.help_outputfolder"), default=os.getcwd())
         s.add_argument(
             "--debug",
             dest="debug",
-            help="Print ListIdentifiers output",
+            help=t("cli.help_debug"),
             action="store_true",
         )
-        s.add_argument("--exporttype", "-e", help="Export format (xml/json)", default="xml")
+        s.add_argument("--exporttype", "-e", help=t("cli.help_exporttype"), default="xml")
         s.add_argument(
             "--gentle",
             dest="gentle",
             action="store_true",
             default=False,
-            help="Conservative mode for sensitive endpoints: 1 thread, 30s timeout, 20s rate limit (all overridable)",
+            help=t("cli.help_gentle"),
         )
         s.add_argument(
             "--ratelimit",
             type=float,
             default=None,
             dest="ratelimit",
-            help="Minimum seconds between requests (default: none)",
+            help=t("cli.help_ratelimit"),
         )
         s.add_argument(
             "--deleted",
             dest="deleted_handling",
             choices=["keep", "skip", "folder"],
             default="keep",
-            help="How to handle deleted records: keep (default), skip, or move to _deleted/ folder",
+            help=t("cli.help_deleted"),
         )
         s.add_argument(
             "--summary",
             dest="summary",
             action="store_true",
             default=False,
-            help="Write a structured XML run summary (_ometha_<datengeber>_summary.xml)",
+            help=t("cli.help_summary"),
         )
         s.add_argument(
             "--sort-invalid",
             dest="sort_invalid",
             action="store_true",
             default=False,
-            help="Move records without element content below <metadata> to _invalid/",
+            help=t("cli.help_sort_invalid"),
         )
 
     def convert_common_args(args):
@@ -119,22 +120,22 @@ def parseargs() -> dict[str, Any]:
         )
 
     subparsers = {
-        "conf": "Harvesting using configuration file.",
-        "auto": "Automatic mode to harvest a specific URL.",
-        "ids": "Harvesting using ID file.",
-        "default": "Harvesting with ListIdentifiers and GetRecord verbs.",
+        "conf": t("cli.sub_conf"),
+        "auto": t("cli.sub_auto"),
+        "ids": t("cli.sub_ids"),
+        "default": t("cli.sub_default"),
     }
     # top-level parser
     toplevelparser = argparse.ArgumentParser(
-        description="A OAI-PMH Harvester using ListIdentifiers and GetRecord verbs."
+        description=t("cli.description")
     )
     # add a --version flag
     toplevelparser.add_argument(
         "--version",
         "-v",
         action="version",
-        version=f"Ometha {__version__}",
-        help="Print version and exit",
+        version=t("cli.version_string", version=__version__),
+        help=t("cli.help_version"),
     )
     # create one subparser
     subprs = toplevelparser.add_subparsers(dest="command")
@@ -145,88 +146,88 @@ def parseargs() -> dict[str, Any]:
             add_common_args(prs)
             prs.add_argument(
                 "--resumptiontoken",
-                help="Resume harvesting with resumptionToken. Requires -d option.",
+                help=t("cli.help_resumptiontoken"),
             )
-            prs.add_argument("--baseurl", "-b", required=True, help="URL of the OAI interface")
-            prs.add_argument("--metadataprefix", "-m", required=True, help="Metadata Prefix")
-            prs.add_argument("--datengeber", "-d", default=TIMESTR, help="Datengeber (Folder name)")
+            prs.add_argument("--baseurl", "-b", required=True, help=t("cli.help_baseurl"))
+            prs.add_argument("--metadataprefix", "-m", required=True, help=t("cli.help_metadataprefix"))
+            prs.add_argument("--datengeber", "-d", default=TIMESTR, help=t("cli.help_datengeber"))
             prs.add_argument(
                 "--set",
                 "-s",
                 nargs="+",
                 type=parse_set_values,
-                help="Set(s) on the OAI interface, separated by ',' or '/' symbol",
+                help=t("cli.help_set"),
             )
             prs.add_argument(
                 "--fromdate",
                 "-f",
-                help="ISO8601 timestamp (YYYY-MM-DD), harvesting from this date onwards",
+                help=t("cli.help_fromdate"),
             )
             prs.add_argument(
                 "--untildate",
                 "-u",
-                help="ISO8601 timestamp (YYYY-MM-DD), harvesting until this date",
+                help=t("cli.help_untildate"),
             )
         elif cmd == "conf":
-            prs.add_argument("--exporttype", "-e", help="Export format (lido/json)")
+            prs.add_argument("--exporttype", "-e", help=t("cli.help_exporttype_conf"))
             prs.add_argument(
                 "--debug",
                 dest="debug",
-                help="Print ListIdentifiers output",
+                help=t("cli.help_debug"),
                 action="store_true",
             )
             prs.add_argument(
                 "--conf",
                 "-c",
                 required=True,
-                help="Relative or absolute path to the YAML configuration file",
+                help=t("cli.help_conf"),
             )
             prs.add_argument(
                 "--auto",
                 "-a",
                 action="store_true",
-                help="Automatic mode to harvest the period from from-date to today. Automatically adjusts the data in the configuration file.",
+                help=t("cli.help_auto"),
             )
             prs.add_argument(
                 "--no-log",
                 dest="no_log",
                 action="store_true",
-                help="Kein Logfile anlegen (sinnvoll für Cron-Betrieb mit externem Logging).",
+                help=t("cli.help_no_log"),
             )
             prs.add_argument(
                 "--gentle",
                 dest="gentle",
                 action="store_true",
                 default=False,
-                help="Conservative mode (see default command). A 'gentle' key in the YAML file takes precedence.",
+                help=t("cli.help_gentle_conf"),
             )
             prs.add_argument(
                 "--cleanup-on-empty",
                 dest="cleanup_empty",
                 action="store_true",
-                help="Ausgabeordner löschen wenn keine Datensätze geharvestet wurden.",
+                help=t("cli.help_cleanup_on_empty"),
             )
             prs.add_argument(
                 "--summary",
                 dest="summary",
                 action="store_true",
                 default=False,
-                help="Write a structured XML run summary (_ometha_<datengeber>_summary.xml)",
+                help=t("cli.help_summary"),
             )
             prs.add_argument(
                 "--sort-invalid",
                 dest="sort_invalid",
                 action="store_true",
                 default=False,
-                help="Move records without element content below <metadata> to _invalid/",
+                help=t("cli.help_sort_invalid"),
             )
         elif cmd == "auto":
             add_common_args(prs)
-            prs.add_argument("--url", "-u", required=True, help="URL")
+            prs.add_argument("--url", "-u", required=True, help=t("cli.help_url"))
         elif cmd == "ids":
             add_common_args(prs)
-            prs.add_argument("--idfile", "-i", required=True, help="Path to ID YAML File")
-            prs.add_argument("--datengeber", "-d", default=TIMESTR, help="Datengeber (Folder name)")
+            prs.add_argument("--idfile", "-i", required=True, help=t("cli.help_idfile"))
+            prs.add_argument("--datengeber", "-d", default=TIMESTR, help=t("cli.help_datengeber"))
 
     args = toplevelparser.parse_args()
 
@@ -247,9 +248,9 @@ def parseargs() -> dict[str, Any]:
         PRM["f_date"] = _resolve_date(args.fromdate)
         PRM["u_date"] = _resolve_date(args.untildate)
         if args.fromdate and not PRM["f_date"]:
-            sys.exit(f"{SEP_LINE}{args.fromdate} ist kein valides Datum. Bitte ISO8601 (YYYY-MM-DD) oder z.B. '20m', '6h', '1d' verwenden.")
+            sys.exit(SEP_LINE + t("cli.invalid_date", value=args.fromdate))
         if args.untildate and not PRM["u_date"]:
-            sys.exit(f"{SEP_LINE}{args.untildate} ist kein valides Datum. Bitte ISO8601 (YYYY-MM-DD) oder z.B. '20m', '6h', '1d' verwenden.")
+            sys.exit(SEP_LINE + t("cli.invalid_date", value=args.untildate))
     elif args.command == "conf":
         PRM["conf_m"] = True
         PRM["conf_f"], PRM["auto_m"], PRM["exp_type"] = (
@@ -282,9 +283,9 @@ def parseargs() -> dict[str, Any]:
         PRM["f_date"] = _resolve_date(str(f_date_raw)) if f_date_raw else None
         PRM["u_date"] = _resolve_date(str(u_date_raw)) if u_date_raw else None
         if f_date_raw and not PRM["f_date"]:
-            sys.exit(f"{SEP_LINE}{f_date_raw} ist kein valides Datum. Bitte ISO8601 (YYYY-MM-DD) oder z.B. '20m', '6h', '1d' verwenden.")
+            sys.exit(SEP_LINE + t("cli.invalid_date", value=f_date_raw))
         if u_date_raw and not PRM["u_date"]:
-            sys.exit(f"{SEP_LINE}{u_date_raw} ist kein valides Datum. Bitte ISO8601 (YYYY-MM-DD) oder z.B. '20m', '6h', '1d' verwenden.")
+            sys.exit(SEP_LINE + t("cli.invalid_date", value=u_date_raw))
 
         # If baseurl is not found, try 'url' as a fallback
         if PRM["b_url"] is None:

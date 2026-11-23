@@ -71,7 +71,7 @@ def test_beispiel(requests_mock, session, prm_base):
 
 ## Konventionen
 
-- Fehlermeldungen auf Deutsch (Konsistenz mit bestehendem Code)
+- Nutzer-sichtbare Texte nur über `t("modul.key", **platzhalter)` aus `ometha/i18n.py`; Keys in `ometha/locales/en.json` und `de.json` pflegen (gleiche Keys und Platzhalter, wird getestet). Sprache: `OMETHA_LANG`, sonst Systemsprache, sonst Englisch. Nie `t()` zur Importzeit aufrufen und keine lokale Variable `t` benennen.
 - Logging via `loguru` (`logger.info/warning/critical`)
 - Keine `print()`-Calls außer über `print_and_log()` aus `helpers.py`
 - HTTP immer über die übergebene `requests.Session` – nie direkt `requests.get()`

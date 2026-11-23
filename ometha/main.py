@@ -40,6 +40,7 @@ from .helpers import (
     print_and_log,
     safe_get,
 )
+from .i18n import t
 from .tui import interactiveMode
 
 
@@ -95,11 +96,11 @@ def generate_id_harvesting_url(
             if u:
                 PRM["u_date"] = str(u)[:10]
         if f != PRM["f_date"] or u != PRM["u_date"]:
-            logger.info(f"Datumsgranularität vereinheitlicht: from={PRM['f_date']} until={PRM['u_date']}")
+            logger.info(t("main.granularity_unified", f_date=PRM["f_date"], u_date=PRM["u_date"]))
 
     if PRM["res_tok"]:
         url = f"{base_url}&resumptionToken={PRM['res_tok']}"
-        logger.info(f"Fortsetzen des Identifier-Harvestings bei: {re.sub('/$', '', url)}")
+        logger.info(t("main.resume_identifier", url=re.sub('/$', '', url)))
     else:
         params = "&".join(f"{name}={PRM[key]}" for name, key in urlpar.items() if PRM[key] is not None)
         url = f"{base_url}&{params}" if params else base_url
@@ -146,9 +147,9 @@ def start_process() -> None:
         with open(config_path, "r", encoding="utf-8") as yaml_configfile:
             headers = yaml.safe_load(yaml_configfile)
     else:
-        if input("Konfigurationsdatei mit abweichenden Werten für den http-Header erstellen? y/N: ").lower() == "y":
-            ua = input("Wie soll der User-Agent String lauten?: ")
-            frm = input("Soll es 'from'-Feld im Header geben? (Leerlassen, wenn nein): ")
+        if input(t("main.create_config_prompt")).lower() == "y":
+            ua = input(t("main.user_agent_prompt"))
+            frm = input(t("main.from_field_prompt"))
             headers = {"User-Agent": ua, "From": frm, "asciiart": True}
             with open(os.path.join(config_path), "w", encoding="utf8") as f:
                 f.write(yaml.dump(headers))
@@ -171,7 +172,7 @@ def start_process() -> None:
     ╚██████╔╝██║ ╚═╝ ██║███████╗   ██║   ██║  ██║██║  ██║
     ╚═════╝ ╚═╝     ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝
         """,
-            f"{Style.DIM}Version {__version__}\n{SEP_LINE}",
+            f"{Style.DIM}{t('main.version_line', version=__version__)}\n{SEP_LINE}",
         )
     headers = {"User-Agent": headers["User-Agent"], "From": headers["From"]}
 
@@ -197,7 +198,7 @@ def start_process() -> None:
 
     # check that PRM is not None
     if not PRM:
-        logger.critical("No parameters were passed to Ometha.")
+        logger.critical(t("main.no_params"))
         sys.exit()
     # output PRM dictionary if debug mode is enabled via environment variable
     if os.getenv("OMETHA_DEBUG") == "True":
@@ -223,46 +224,46 @@ def start_process() -> None:
             enqueue=True,
         )
         parameters = {
-            "Ometha Version": __version__,
-            "Datengeber": PRM["dat_geb"],
-            "Base-URL": PRM["b_url"],
-            "metadataPrefix": PRM["pref"],
+            t("main.param_version"): __version__,
+            t("main.param_data_provider"): PRM["dat_geb"],
+            t("main.param_base_url"): PRM["b_url"],
+            t("main.param_prefix"): PRM["pref"],
         }
         if PRM["sets"]:
-            parameters["Sets"] = PRM["sets"]
+            parameters[t("main.param_sets")] = PRM["sets"]
         if PRM["timeout"]:
-            parameters["Timeout"] = PRM["timeout"]
+            parameters[t("main.param_timeout")] = PRM["timeout"]
         if PRM["out_f"]:
-            parameters["Outputfolder"] = PRM["out_f"]
+            parameters[t("main.param_output_folder")] = PRM["out_f"]
         if PRM["n_procs"] is not None:
-            parameters["Number of parallel downloads"] = PRM["n_procs"]
+            parameters[t("main.param_parallel")] = PRM["n_procs"]
         if PRM["f_date"] is not None:
-            parameters["From date"] = PRM["f_date"]
+            parameters[t("main.param_from")] = PRM["f_date"]
         if PRM["u_date"] is not None:
-            parameters["Until date"] = PRM["u_date"]
+            parameters[t("main.param_until")] = PRM["u_date"]
         for param, value in parameters.items():
             logger.log("PARAMETER", f"{param}: {value}")
         if PRM["id_f"] is not None:
-            logger.log("PARAMETER", f"ID file: {PRM['id_f']}")
-        print(f"{INFO}Logfile: {log_file}")
+            logger.log("PARAMETER", t("main.id_file_log", path=PRM["id_f"]))
+        print(f"{INFO}{t('main.logfile', path=log_file)}")
 
     # Baseurl anpassen/überprüfen
     PRM["b_url"] = re.sub(r"(\?.+)", "", PRM["b_url"]).rstrip("/")
     try:
         # try baseurl
-        with yaspin(Spinners.dots, text=f"Checking if {PRM['b_url']} is accessible"):
+        with yaspin(Spinners.dots, text=t("main.checking_accessible", url=PRM["b_url"])):
             safe_get(session, PRM["b_url"], timeout=(20, 80))
     except (
         requests.exceptions.HTTPError,
         requests.exceptions.RetryError,
         urllib3.exceptions.MaxRetryError,
     ):
-        print(f"{FEHLER} {PRM['b_url']} is not accessible. Trying with verb=Identify.")
+        print(f"{FEHLER} {t('main.not_accessible_trying_identify', url=PRM['b_url'])}")
         try:
             # try baseurl with verb Identify
             with yaspin(
                 Spinners.dots,
-                text=f"Checking if {PRM['b_url']}?verb=Identify is accessible",
+                text=t("main.checking_accessible", url=f"{PRM['b_url']}?verb=Identify"),
             ):
                 safe_get(session, PRM["b_url"] + "?verb=Identify", timeout=(20, 80))
         except (
@@ -292,7 +293,7 @@ def start_process() -> None:
 
     a_sets, i_sets = _split_sets(PRM)
     if PRM["id_f"] is not None:
-        print(f"{INFO} IDs werden aus {PRM['id_f']} gelesen.")
+        print(f"{INFO} {t('main.ids_from_file', path=PRM['id_f'])}")
         ids = read_yaml_file(PRM["id_f"], ["ids"])[0]
     elif i_sets:
         a_ids = [i for a_set in a_sets for i in all_ids(a_set)]
@@ -309,7 +310,7 @@ def start_process() -> None:
             import shutil
 
             shutil.rmtree(folder, ignore_errors=True)
-        print_and_log(f"{SEP_LINE}Keine IDs gefunden. Programm beendet.", logger, "warning")
+        print_and_log(f"{SEP_LINE}{t('main.no_ids_found')}", logger, "warning")
         change_date(OAITIMESTR, PRM["conf_f"], key="fromdate")
         sys.exit()
 
@@ -330,8 +331,8 @@ def start_process() -> None:
         create_id_file(PRM, ids, folder, type="successful")
 
     PRM["n_procs"] = default_n_procs(PRM, None if pipelined else len(ids))
-    logger.info(f"Anzahl der parallelen Downloads auf {PRM['n_procs']} gesetzt (auf Basis der Anzahl an IDs).")
-    print(f"{Style.DIM} Timeout auf {PRM['timeout']} s gesetzt. {Style.RESET_ALL}\n{SEP_LINE}") if PRM[
+    logger.info(t("main.n_procs_set", n=PRM["n_procs"]))
+    print(f"{Style.DIM} {t('main.timeout_set', timeout=PRM['timeout'])} {Style.RESET_ALL}\n{SEP_LINE}") if PRM[
         "debug"
     ] else None
     # ---- Start Harvesting ----
@@ -350,12 +351,11 @@ def start_process() -> None:
     #                   da manche Schnittstellen Datensätze erst ad hoc erzeugen
     retry_ids = list(set(failed_ids + failed_download))
     if retry_ids:
-        print(f"Fehlgeschlagene IDs: {retry_ids}") if PRM["debug"] else None
+        print(t("main.failed_ids_debug", ids=retry_ids)) if PRM["debug"] else None
         failed_idfile = create_id_file(PRM, retry_ids, folder, type="failed")
         print_and_log(
-            f"{SEP_LINE}{ACHTUNG} {len(retry_ids)} IDs konnten nicht geharvestet werden.\n"
-            f"  Siehe dazu {failed_idfile}\n"
-            f"{SEP_LINE}{INFO} Fehlgeschlagene IDs werden einmalig erneut versucht...",
+            f"{SEP_LINE}{ACHTUNG} {t('main.retry_ids_failed', count=len(retry_ids), file=failed_idfile)}\n"
+            f"{SEP_LINE}{INFO} {t('main.retry_once')}",
             logger,
             "warning",
         )
@@ -375,15 +375,14 @@ def start_process() -> None:
         stats["failed_ids"] = len(failed_ids)
         if failed_ids or failed_download:
             print_and_log(
-                f"{SEP_LINE}{INFO} Nach erneutem Versuch: "
-                f"{len(failed_download) + len(failed_ids)} Datensätze endgültig fehlgeschlagen.",
+                f"{SEP_LINE}{INFO} {t('main.after_retry_failed', count=len(failed_download) + len(failed_ids))}",
                 logger,
                 "warning",
             )
             create_id_file(PRM, failed_ids + failed_download, folder, type="final_failed")
         else:
             print_and_log(
-                f"{SEP_LINE}{INFO} Alle IDs beim zweiten Versuch erfolgreich geharvestet.",
+                f"{SEP_LINE}{INFO} {t('main.after_retry_ok')}",
                 logger,
                 "info",
             )
@@ -393,16 +392,16 @@ def start_process() -> None:
     hours, remainder = divmod(elapsed, 3600)
     minutes, seconds = divmod(remainder, 60)
     runtime = f"{int(hours):02}:{int(minutes):02}:{seconds:.3f}"
-    print_and_log(f"{SEP_LINE}{INFO} Vorgang hat {runtime} gedauert", logger, "info")
+    print_and_log(f"{SEP_LINE}{INFO} {t('main.runtime', runtime=runtime)}", logger, "info")
     if PRM.get("summary"):
         summary_file = write_summary_xml(PRM, folder, stats, runtime)
-        print_and_log(f"{INFO} Zusammenfassung: {summary_file}", logger, "info")
+        print_and_log(f"{INFO} {t('main.summary', file=summary_file)}", logger, "info")
 
     change_date(OAITIMESTR, PRM["conf_f"], key="fromdate")
 
     if os.name == "nt":
         # Beenden unter Windows
-        input(f"{SEP_LINE}Drücken Sie Enter zum Beenden...")
+        input(f"{SEP_LINE}{t('main.press_enter_exit')}")
     sys.exit()
 
 
@@ -414,7 +413,7 @@ def main() -> None:
     try:
         start_process()
     except KeyboardInterrupt:
-        print_and_log(f"\n{ACHTUNG}Harvesting durch Nutzer abgebrochen.", logger, "warning")
+        print_and_log(f"\n{ACHTUNG}{t('main.aborted')}", logger, "warning")
         logger.complete()  # Log-Queue (enqueue=True) leeren, bevor hart beendet wird
         # os._exit statt sys.exit: sonst wartet Python beim Beenden auf die noch
         # laufenden Download-Threads (Timeouts/Retries) und hängt

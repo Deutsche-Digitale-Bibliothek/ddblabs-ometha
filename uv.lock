@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.12"
 
 [[package]]
@@ -1015,7 +1015,7 @@ wheels = [
 
 [[package]]
 name = "ometha"
-version = "3.0.0"
+version = "3.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "colorama" },

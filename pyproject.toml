@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ometha"
-version = "3.0.0"
+version = "3.1.0"
 description = "OAI Metadata Harvester"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -40,6 +40,9 @@ ometha = "ometha.main:main"
 
 [tool.setuptools]
 packages = ["ometha"]
+
+[tool.setuptools.package-data]
+ometha = ["locales/*.json"]
 
 [dependency-groups]
 dev = [

@@ -343,7 +343,7 @@ class TestOptionN:
         from ometha.helpers import GENTLE_DEFAULTS
         inputs = [
             "N", "testDG", "/tmp",
-            "j", "4", "10000", "xml",
+            "y", "4", "10000", "xml",
             "", "", "keep",
             "http://oai.example.org/", "oai_dc", "", "", "",
         ]
@@ -805,3 +805,41 @@ class TestPrmModeTui:
         with mock_inputs(*inputs):
             prm = interactiveMode(session)
         assert prm["mode"] == "ui"
+    def test_prefixes_listed(self, session, requests_mock, capsys):
+        """Regression: Prefixe kamen aus ListSets (nie vorhanden) und der Code war nach sys.exit unerreichbar."""
+        from tests.oai_mock import OAIMock
+
+        mock = OAIMock(
+            base_url="http://oai.example.org/oai",
+            sets={"ddc:500": "Naturwissenschaften"},
+            metadata_formats=["oai_dc", "mods"],
+        )
+        mock.register(requests_mock)
+        with mock_inputs("S", "http://oai.example.org/oai"):
+            with pytest.raises(SystemExit) as exc:
+                interactiveMode(session)
+        assert exc.value.code == 0
+        assert "mods, oai_dc" in capsys.readouterr().out
+
+    def test_sets_follow_resumption_token(self, session, requests_mock, capsys):
+        """Regression: nur die erste ListSets-Seite wurde ausgegeben."""
+        from tests.oai_mock import OAIMock
+
+        ns = "http://www.openarchives.org/OAI/2.0/"
+
+        def page(spec, token=""):
+            tok = f"<resumptionToken>{token}</resumptionToken>" if token else ""
+            return (
+                f'<?xml version="1.0"?><OAI-PMH xmlns="{ns}"><ListSets>'
+                f"<set><setSpec>{spec}</setSpec><setName>name_{spec}</setName></set>{tok}</ListSets></OAI-PMH>"
+            )
+
+        base = "http://oai.example.org/oai"
+        OAIMock(base_url=base).register(requests_mock)  # ListMetadataFormats
+        requests_mock.get(f"{base}?verb=ListSets", text=page("a", "t2"))
+        requests_mock.get(f"{base}?verb=ListSets&resumptionToken=t2", text=page("b"))
+        with mock_inputs("S", base):
+            with pytest.raises(SystemExit):
+                interactiveMode(session)
+        out = capsys.readouterr().out
+        assert "name_a" in out and "name_b" in out

@@ -6,6 +6,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [3.1.0] - 2026-11-23
+
+### Added
+
+- English translation of all user-facing text (closes #11). Texts live in `ometha/locales/en.json` and `de.json`, accessed via `t()` in `ometha/i18n.py`.
+- Language is chosen from `OMETHA_LANG`, then the system locale (`LC_ALL`, `LC_MESSAGES`, `LANG`), else English.
+
+### Changed
+
+- TUI gentle-mode prompt takes `y`/`n` (`j`/`ja`/`nein` still accepted).
+- Checkpoint labels are language-neutral.
+
+### Fixed
+
+- TUI option `S`: all `ListSets` pages are shown, and metadata prefixes are read from `ListMetadataFormats`. Before, this code was unreachable.
+
+---
+
 ## [3.0.0] - 2026-11-11
 
 ### Breaking

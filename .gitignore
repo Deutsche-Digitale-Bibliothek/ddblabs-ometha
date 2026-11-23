@@ -17,4 +17,5 @@ build/
 Pipfile.lock
 *.xml
 *.json
+!ometha/locales/*.json
 resumption_token_latest.txt
